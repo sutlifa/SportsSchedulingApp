@@ -48,6 +48,9 @@ lib/engine/       PURE, shared by client, API and scripts. Imports use .ts exten
                   assignments are kept (locked first) so a coach told "Sheet B" isn't moved;
                   audit() re-checks a saved schedule (incl. double-booked units);
                   moveOptions() for hand moves (with each time's free units)
+                  rebindSlotIds()/gamesInSlots(): a game's slot is whatever spotForMatch binds
+                  (slotId, else date+time+facility). Workspace's change re-points slotIds after
+                  slot edits; count "booked in this slot" with gamesInSlots, never by slotId
   sanitize.ts     coerce untrusted JSON (API bodies, backups) into a League/Schedule
   sample.ts       the "example league" AND the main verify fixture
   advice.ts       problem message → plain fix + the tab to make it on (matches engine

@@ -19,14 +19,17 @@ const STORE_KEY = "seasonsmith.guide.sport";
 export function useGuideSport(): [SportId, (s: SportId) => void] {
     const [sport, setSport] = useState<SportId>("soccer");
     useEffect(() => {
-        let wanted: string | null = null;
+        const fromUrl = new URLSearchParams(window.location.search).get("sport");
+        let stored: string | null = null;
         try {
-            wanted = new URLSearchParams(window.location.search).get("sport") ?? window.localStorage.getItem(STORE_KEY);
+            stored = window.localStorage.getItem(STORE_KEY);
         } catch {
-            // storage blocked: keep the default
+            // storage blocked: the URL or the default
         }
-        if (isSportId(wanted)) {
-            const next = wanted;
+        // A bad ?sport= (a typo, an old link) falls through to the stored
+        // choice; `??` would have stopped at it because it isn't null.
+        if (isSportId(fromUrl)) {
+            const next = fromUrl;
             // Remember a ?sport= link too (a league's Help link), so the
             // other page -- reached from the header, without ?sport= --
             // opens in the same sport.
@@ -35,6 +38,9 @@ export function useGuideSport(): [SportId, (s: SportId) => void] {
             } catch {
                 // ignore
             }
+            void Promise.resolve().then(() => setSport(next));
+        } else if (isSportId(stored)) {
+            const next = stored;
             void Promise.resolve().then(() => setSport(next));
         }
     }, []);

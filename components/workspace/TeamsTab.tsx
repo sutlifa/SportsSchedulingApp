@@ -144,6 +144,10 @@ export default function TeamsTab({ doc, change, lookup, goTo, result, t: terms, 
                             </Field>
                             <Field label={cap(terms.matches)} htmlFor="new-team-matches">
                                 <NumberInput
+                                    // New per added team: Enter adds without blurring, and
+                                    // the field's typed draft would otherwise survive the
+                                    // reset and be committed again for the next team.
+                                    key={added ?? "first"}
                                     id="new-team-matches"
                                     value={draft.matches}
                                     onChange={(v) => setDraft({ ...draft, matches: v })}

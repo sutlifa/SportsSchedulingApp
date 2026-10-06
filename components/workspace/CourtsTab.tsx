@@ -1,21 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import { DAY_LONG, formatDate, formatTime, parseTimes, toMinutes } from "@/lib/engine/dates";
+import { DAY_LONG, formatDate, formatTime, isTime, parseTimes, toMinutes } from "@/lib/engine/dates";
+import { gamesInSlots, type Audit } from "@/lib/engine/engine";
+import { readiness } from "@/lib/engine/readiness";
 import { mapSearchUrl, safeMapUrl } from "@/lib/engine/sanitize";
 import { cap, countOf, type Terms } from "@/lib/engine/sports";
-import type { DayOfWeek, League, Location, Rule, Slot, Unit } from "@/lib/engine/types";
+import type { DayOfWeek, League, Location, Match, Rule, Slot, Unit } from "@/lib/engine/types";
 import DayPlanner, { FacilityPills, SpotTotals } from "./DayPlanner";
 import ImportDialog from "./ImportDialog";
 import { locationLink } from "./ScheduleTab";
 import { withData, type Doc, type TabProps } from "./types";
-import { ConfirmButton, DaysPicker, Field, Modal, NumberInput, uid } from "./ui";
+import { ConfirmButton, DaysPicker, Field, Modal, NumberInput, uid, useFocusLater } from "./ui";
 
-/** Games at once in a slot: from its named units when it has them, else its number. */
+/**
+ * Games at once in a slot: from its named units when it has them, else its
+ * number. Mirrors prepare() in the engine exactly -- including dropping a
+ * slot whose stored number is 0 even if it names units, and one at a deleted
+ * facility -- so the planner's spot counts are the spots Generate really has.
+ */
 export function slotCapacity(s: Slot, league: League): number {
     const loc = league.locations.find((l) => l.id === s.locationId);
-    const units = s.unitIds.filter((id) => loc?.units.some((u) => u.id === id));
-    return units.length ? Math.floor(units.length / Math.max(1, league.settings.courtsPerMatch || 1)) : s.capacity;
+    if (!loc || !isTime(s.time) || !(s.capacity > 0)) return 0;
+    const units = s.unitIds.filter((id) => loc.units.some((u) => u.id === id));
+    const cpm = Math.max(1, Math.floor(league.settings.courtsPerMatch || 1));
+    return units.length ? Math.floor(units.length / cpm) : Math.floor(s.capacity);
+}
+
+/** Placed games the engine binds to any of these slots (see gamesInSlots). */
+export function bookedIn(result: Audit, matches: Match[], ids: Iterable<string>): number {
+    return gamesInSlots(result.ctx, matches, new Set(ids)).length;
 }
 
 export function unitNames(ids: string[] | undefined, league: League): string {
@@ -66,6 +80,7 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
     // needs a post-mount effect that flips the view a moment after it
     // renders, which is worse than always opening on the planner.
     const [view, setView] = useState<"day" | "list">("day");
+    const focusLater = useFocusLater();
     const [qCap, setQCap] = useState<number | null>(2);
     // null = every unit at the facility; a list = just those.
     const [qUnits, setQUnits] = useState<string[] | null>(null);
@@ -89,6 +104,10 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
     const order = (d: DayOfWeek) => (d + 6) % 7; // Monday first
     const slots = [...data.slots].sort((a, b) => order(a.day) - order(b.day) || toMinutes(a.time) - toMinutes(b.time));
     const needed = Math.round(data.teams.reduce((s, team) => s + (team.matches ?? data.brackets.find((b) => b.id === team.bracketId)?.matches ?? 0), 0) / 2);
+
+    // The time step's readiness checks: the totals' verdict leads with these
+    // so it can't say "plenty of room" while a bracket has no usable time.
+    const timeChecks = only === "facilities" ? [] : readiness(data, doc.name).filter((c) => c.step === "time" && c.level !== "info");
 
     const pickLocation = (id: string) => {
         setQLoc(id);
@@ -219,7 +238,7 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                             return (
                                 <div key={l.id} className="card flex items-start justify-between gap-3 p-4">
                                     <div className="min-w-0">
-                                        <div className="font-semibold">{l.name}</div>
+                                        <div className="font-semibold [overflow-wrap:anywhere]">{l.name}</div>
                                         {l.address && <div className="text-sm text-muted">{l.address}</div>}
                                         <div className="mt-1 text-sm">
                                             {l.units.length ? (
@@ -290,10 +309,11 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                         ) : view === "day" ? (
                             <>
                                 <FacilityPills league={data} t={t} locId={locId} onPick={pickLocation} />
-                                <SpotTotals league={data} result={result} t={t} location={qLocation} needed={needed} />
+                                <SpotTotals league={data} result={result} t={t} location={qLocation} needed={needed} checks={timeChecks} />
                                 <DayPlanner
                                     doc={doc}
                                     change={change}
+                                    result={result}
                                     t={t}
                                     locId={locId}
                                     onEditSlot={setEditingSlot}
@@ -302,7 +322,7 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                             </>
                         ) : (
                             <>
-                                <SpotTotals league={data} result={result} t={t} needed={needed} />
+                                <SpotTotals league={data} result={result} t={t} needed={needed} checks={timeChecks} />
                                 {slots.length > 0 ? renderList() : <div className="card p-5 text-sm text-muted">No weekly {t.time} yet.</div>}
                             </>
                         )}
@@ -452,10 +472,16 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                     onSave={(s) => {
                         change((d) => withData(d, { slots: d.data.slots.map((x) => (x.id === s.id ? s : x)) }));
                         setEditingSlot(null);
+                        // A slot saved onto another day (or facility) is a new
+                        // button somewhere else, and the dialog's own "focus
+                        // what opened me" finds the old one gone. Follow it.
+                        if (s.locationId !== locId) pickLocation(s.locationId);
+                        focusLater(`slot-btn-${s.id}`, `planner-day-${s.day}`);
                     }}
                     onDelete={() => {
                         change((d) => withData(d, { slots: d.data.slots.filter((x) => x.id !== editingSlot.id) }));
                         setEditingSlot(null);
+                        focusLater(`planner-day-${editingSlot.day}`);
                     }}
                 />
             )}
@@ -726,7 +752,7 @@ function SlotDialog({ slot, props, onClose, onSave, onDelete }: { slot: Slot; pr
     const { data } = props.doc;
     const t = props.t;
     const [s, setS] = useState<Slot>(slot);
-    const booked = props.doc.schedule.matches.filter((m) => m.slotId === slot.id).length;
+    const booked = bookedIn(props.result, props.doc.schedule.matches, [slot.id]);
     const loc = data.locations.find((l) => l.id === s.locationId);
     const cpm = Math.max(1, data.settings.courtsPerMatch || 1);
     return (
@@ -786,7 +812,11 @@ function SlotDialog({ slot, props, onClose, onSave, onDelete }: { slot: Slot; pr
                     </p>
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-                    <ConfirmButton label="Delete slot" confirmLabel="Really delete?" onConfirm={onDelete} />
+                    <ConfirmButton
+                        label="Delete slot"
+                        confirmLabel={booked ? `Delete? ${countOf(booked, t)} will be flagged` : "Really delete?"}
+                        onConfirm={onDelete}
+                    />
                     <div className="flex gap-2">
                         <button className="btn-ghost" onClick={onClose}>
                             Cancel

@@ -170,12 +170,15 @@ async function walk(sport, t) {
         ok((await page.getByRole("button", { name: "By day", exact: true }).getAttribute("aria-pressed")) === "true", "opens on the By day planner");
         ok((await page.getByRole("button", { name: fac1, exact: true }).getAttribute("aria-pressed")) === "true", `${fac1} is picked first`);
         const day = (name) => page.locator(`section[aria-label="${name}"]`);
+        const focused = () => page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent ?? "");
         const addTimes = async (dayName, times, reads) => {
-            await day(dayName).getByRole("button", { name: "Add times", exact: true }).click();
+            await day(dayName).getByRole("button", { name: `Add times on ${dayName}`, exact: true }).click();
+            ok((await page.evaluate(() => document.activeElement?.id)) === (await day(dayName).getByLabel("Start times").getAttribute("id")), "Add times focuses its box");
             await day(dayName).getByLabel("Start times").fill(times);
             await day(dayName).getByText(`Reads as: ${reads}`, { exact: true }).waitFor();
             checks++;
             await day(dayName).getByRole("button", { name: "Add", exact: true }).click();
+            ok((await focused()) === `Add times on ${dayName}`, `after adding, focus is back on ${dayName}'s Add times (got "${await focused()}")`);
         };
         const spots = async (dayName, n) => {
             const text = (await day(dayName).locator("p").first().innerText()).trim();
@@ -188,16 +191,18 @@ async function walk(sport, t) {
         ok((await day("Saturday").getByRole("button", { name: `Saturday 9:00 AM, ${u(0)}, ${u(1)}, ${u(2)}`, exact: true }).count()) === 1, "a slot button names its day, time and units");
         ok((await day("Saturday").getByText(`${u(0)}, ${u(1)}, ${u(2)}`, { exact: true }).count()) === 4, `Saturday's 4 times list all 3 ${t.units}`);
         // Adding a time the day already has is skipped, with a note.
-        await day("Sunday").getByRole("button", { name: "Add times", exact: true }).click();
+        ok((await page.getByRole("group", { name: "Is there enough time?" }).innerText()).includes(`No teams yet, so no ${t.matches} needed yet.`), "no teams yet: nothing claimed");
+        await day("Sunday").getByRole("button", { name: "Add times on Sunday", exact: true }).click();
         await day("Sunday").getByLabel("Start times").fill("2pm");
         await day("Sunday").getByRole("button", { name: "Add", exact: true }).click();
         await see("Nothing added: 2:00 PM is already on Sunday, so skipped.");
         await day("Sunday").getByRole("button", { name: "Cancel", exact: true }).click();
+        ok((await focused()) === "Add times on Sunday", "Cancel returns focus to Add times");
         await spots("Sunday", 6);
         await page.getByRole("button", { name: fac2, exact: true }).click();
         ok((await page.getByRole("button", { name: fac2, exact: true }).getAttribute("aria-pressed")) === "true", `${fac2} picked`);
         await addTimes("Tuesday", "5pm, 7pm", "5:00 PM, 7:00 PM");
-        await day("Tuesday").getByRole("button", { name: "Copy to…", exact: true }).click();
+        await day("Tuesday").getByRole("button", { name: "Copy Tuesday to…", exact: true }).click();
         await dialog().getByRole("button", { name: "Thu", exact: true }).click();
         ok(await dialog().getByLabel("Add to their times").isChecked(), "Add to their times is the default");
         await dialog().getByRole("button", { name: "Copy to 1 day", exact: true }).click();
@@ -409,14 +414,36 @@ async function walk(sport, t) {
                     const b = await page.locator(`section[aria-label="${d}"]`).boundingBox();
                     ok(b && b.x >= 0 && b.x + b.width <= 390, `${d} column fits at 390px`);
                 }
-                await page.locator('section[aria-label="Saturday"]').getByRole("button", { name: "Add times", exact: true }).click();
+                const sat = page.locator('section[aria-label="Saturday"]');
+                await sat.getByRole("button", { name: "Add times on Saturday", exact: true }).click();
                 await fits("planner with Add times open");
-                await page.locator('section[aria-label="Saturday"]').getByRole("button", { name: "Cancel", exact: true }).click();
-                await page.locator('section[aria-label="Saturday"]').getByRole("button", { name: "Copy to…", exact: true }).click();
+                await sat.getByRole("button", { name: "Cancel", exact: true }).click();
+                await sat.getByRole("button", { name: "Copy Saturday to…", exact: true }).click();
                 await dialog().waitFor();
                 await fits("Copy to dialog");
                 await page.keyboard.press("Escape");
                 ok((await dialog().count()) === 0, "Escape closes Copy to");
+                // Clear's confirm names the booked games it will flag, and wraps
+                // inside the column. Armed only: it's never pressed twice here.
+                await sat.getByRole("button", { name: "Clear Saturday", exact: true }).click();
+                await sat.getByText(new RegExp(`^Clear 4 times\\? \\d+ scheduled ${t.matches} use them and will be flagged\\.$`)).waitFor();
+                checks++;
+                await fits("Clear's confirm");
+                // A very long facility name must truncate, not widen the page.
+                const longName = `${fac1} Community Recreation and Sports Complex North Annex`;
+                const rename = async (from, to) => {
+                    await stepper("Facilities");
+                    await page.locator(".card").filter({ hasText: from }).first().getByRole("button", { name: "Edit" }).click();
+                    await page.locator("#loc-name").fill(to);
+                    await page.getByRole("button", { name: "Save facility" }).click();
+                    await fits(`Facilities step with "${to}"`);
+                    await stepper(Time);
+                };
+                await rename(fac1, longName);
+                await fits("planner with a long facility name");
+                const pill = await page.getByRole("button", { name: longName, exact: true }).boundingBox();
+                ok(pill && pill.x >= 0 && pill.x + pill.width <= 390, "the long facility pill fits");
+                await rename(longName, fac1);
             }
             if (title === "Brackets & pools") {
                 await page.getByRole("button", { name: "Add bracket" }).click();
