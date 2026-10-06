@@ -247,11 +247,12 @@ export function readTime(c: Cell): string | null {
  * A cell that SAYS a court is unavailable: it STARTS with a closed word,
  * whatever follows ("Tournament - courts 1-6", "Clinic 9-11am",
  * "Reserved (2)" -- ambiguous, so it errs toward not booking). The one
- * exception is a court's own name: "Clinic Court", "Event Court 2" and
- * "Private Court 1" are courts, not closures. Note "3 (1 held for lessons)"
+ * exception is exactly a court's own name -- ONE court, singular, at most
+ * one number: "Clinic Court", "Event Court 2", "Private Ct 1". A plural or
+ * a range ("Tournament courts 1-6", "Lesson Court 5-6") is a closure note. Note "3 (1 held for lessons)"
  * doesn't start with a closed word, so its leading number wins.
  */
-const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b(?!\s*courts?\b)/i;
+const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b(?!\s*(court|ct\.?)(\s*#?\s*\d+[a-z]?)?\s*$)/i;
 
 /** Courts available. null = blank (no slot); 0 = explicitly closed. undefined = unreadable. */
 export function readCourts(c: Cell): number | null | undefined {

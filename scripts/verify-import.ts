@@ -225,6 +225,8 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     eq([ntm.layout, parseWith(noted, ntm, ctx).rows.map((r) => r.courts)], ["rows", [4, 4, 3, 2]], "times inside court notes don't make the sheet look like a grid");
     // Tester round 5: a cell that STARTS with a closed word is closed, digits or not.
     eq([readCourts("Tournament - courts 1-6"), readCourts("Clinic 9-11am"), readCourts("Reserved (2)"), readCourts("Event Court 2"), readCourts("Private Court 1"), readCourts("4 (event at 1pm)")], [0, 0, 0, 2, 1, 4], "closed-word cells are closed; court names and leading numbers aren't");
+    // Tester round 6: only a singular court NAME escapes; plurals and ranges are closure notes.
+    eq([readCourts("Tournament courts 1-6"), readCourts("Event courts 1-4"), readCourts("Lesson Courts 5-6"), readCourts("Private courts 1-2"), readCourts("Lesson Court 5-6"), readCourts("Clinic Ct 3")], [0, 0, 0, 0, 0, 1], "closed word + plural/range = closed; 'Clinic Ct 3' is a court");
     // Counts stay counts.
     eq(guessMapping(parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,11:00,6\n3/7/2027,9:00,4\n3/7/2027,11:00,2\n"), ctx).courtsMode, "count", "court counts stay counts");
     // Same time, location in two casings: one row, not two.
