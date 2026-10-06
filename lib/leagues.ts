@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sql } from "./db";
 import { ensureSchema } from "./db/ensure";
+import { sanitizeLeague, sanitizeSchedule } from "./engine/sanitize";
 import type { League, Schedule } from "./engine/types";
 
 /**
@@ -20,11 +21,20 @@ export type LeagueRecord = { id: string; name: string; data: League; schedule: S
 
 type Row = { id: string; name: string; data: League; schedule: Schedule; version: number; updated_at: Date };
 
+/*
+ * Stored leagues are re-sanitized on the way OUT, not just on the way in.
+ * A league saved by an older version of the app is missing fields added
+ * since (a facility's `units`, a slot's `unitIds`, `settings.sport`...),
+ * and the client assumes every array is an array: a tennis league saved
+ * before units existed crashed the editor on "reading 'length'". Browser
+ * storage, mirrors and backups already go through sanitizeLeague when read;
+ * this makes the database the same. It's idempotent on current data.
+ */
 const toRecord = (r: Row): LeagueRecord => ({
     id: r.id,
     name: r.name,
-    data: r.data,
-    schedule: r.schedule,
+    data: sanitizeLeague(r.data),
+    schedule: sanitizeSchedule(r.schedule),
     version: r.version,
     updatedAt: r.updated_at.toISOString(),
     updatedBy: null,

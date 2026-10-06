@@ -17,6 +17,8 @@ import { createLeague, deleteLeague, getLeague, listLeagues, saveLeague } from "
 import { upsertUser } from "../lib/users.ts";
 import { sampleLeague } from "../lib/engine/sample.ts";
 import { emptySchedule } from "../lib/engine/sanitize.ts";
+import { audit } from "../lib/engine/engine.ts";
+import { readiness } from "../lib/engine/readiness.ts";
 
 const url = process.env.DATABASE_URL ?? "";
 const host = (() => {
@@ -71,6 +73,33 @@ assert((await getLeague(alice, rec.id)) === null, "deleted league can't be read"
 assert((await listLeagues(alice)).length === 0, "deleted league isn't listed");
 const zombie = await saveLeague(alice, rec.id, 2, "resurrect", rec.data, rec.schedule);
 assert(!zombie.ok && zombie.reason === "missing", "an autosave can't resurrect a deleted league");
+
+// A league stored by an older version of the app (before sports and named
+// units) must load in a shape the editor can use. Reading it raw crashed the
+// editor with "Cannot read properties of undefined (reading 'length')".
+{
+    const old: Record<string, unknown> = structuredClone(sampleLeague("tennis")) as never;
+    const o = old as { settings: Record<string, unknown>; locations: Record<string, unknown>[]; slots: Record<string, unknown>[]; availability: Record<string, unknown>[] };
+    delete o.settings.sport;
+    for (const x of o.locations) delete x.units;
+    for (const x of o.slots) delete x.unitIds;
+    for (const x of o.availability) delete x.unitIds;
+    const oldSchedule = { matches: [{ id: "m1", home: "t1", away: "t2", bracketId: "b10", pool: "", date: "2027-03-06", time: "09:00", locationId: "loc-center", slotId: "s1", locked: false }], generatedAt: null, warnings: [] };
+    const made = await createLeague(alice, "Old tennis league", sampleLeague("tennis"), emptySchedule());
+    await sql`UPDATE leagues SET data = ${sql.json(old as never)}, schedule = ${sql.json(oldSchedule as never)} WHERE id = ${made.id}`;
+    const back = (await getLeague(alice, made.id))!;
+    assert(back.data.settings.sport === "tennis", "old league reads as tennis");
+    assert(back.data.locations.every((l) => Array.isArray(l.units)), "old facilities get a units list");
+    assert(back.data.slots.every((x) => Array.isArray(x.unitIds)), "old slots get a unitIds list");
+    let crashed = "";
+    try {
+        audit(back.data, back.schedule.matches);
+        readiness(back.data, back.name);
+    } catch (e) {
+        crashed = (e as Error).message;
+    }
+    assert(!crashed, `old league loads without crashing the editor (${crashed})`);
+}
 
 // Re-applying the schema on an existing database is harmless.
 const { SCHEMA_SQL } = await import("../lib/db/schema.ts");
