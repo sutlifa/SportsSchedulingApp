@@ -7,9 +7,23 @@ import { upsertUser } from "./lib/users";
  * Google account can sign in and gets their own private leagues; during
  * testing, Google's consent-screen test-user list decides who that is.
  */
+/**
+ * Env values pasted into a dashboard often pick up a trailing space, a line
+ * break or surrounding quotes. Google then rejects the client id as unknown
+ * ("Error 401: invalid_client -- The OAuth client was not found"), which
+ * looks like a wrong id when the id is actually right. Strip all of that
+ * before handing the values to the provider.
+ */
+function cleanEnv(v: string | undefined): string | undefined {
+    const t = v?.trim().replace(/^["']|["']$/g, "").trim();
+    return t || undefined;
+}
+
 export const { handlers, signIn, signOut, auth } = NextAuth({
     providers: [
         Google({
+            clientId: cleanEnv(process.env.AUTH_GOOGLE_ID),
+            clientSecret: cleanEnv(process.env.AUTH_GOOGLE_SECRET),
             // Show the account picker every time. Without it Google silently
             // re-uses whichever account the browser is signed into, which on a
             // shared computer is often the wrong one.
