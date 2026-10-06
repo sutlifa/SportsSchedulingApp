@@ -59,9 +59,14 @@ sport. The guide also explains every error message.
 
 ## Using it
 
+The header has every page: **New league**, **Your leagues**, **Guide**, **Tutorial** and **About** on
+wide screens, and a **Menu** button on phones that also lists Errors and fixes, Questions and Privacy.
+
 | Where | What |
 | --- | --- |
-| `/` | Your leagues: create (pick the sport; blank, example league, or from a backup), open, restore backup copies. |
+| `/` | Your leagues and tournaments: open one, restore backup copies kept in this browser. |
+| `/new` | New league or tournament: pick the sport, then **Guided setup**, the example league, or a backup file. |
+| `/league/<id>?setup=1` | The setup wizard: name & sport → season → brackets & pools → facilities → *ice/field/court* time → teams → requests → review & schedule. Each step lists what's still **Needed** (Next stays disabled until it's done), what to **Check**, and notes. **Exit setup** opens the full editor; **Setup guide** reopens the wizard at the first unfinished step. |
 | `/league/<id>` | The league: **Schedule · Teams · Brackets & pools · Facilities & *ice/field/court* time · Season** tabs. |
 | `/guide` | How it works, the tutorial in your sport (`/guide?sport=hockey`), spreadsheet rules, rule reference, every error and its fix. |
 | `/about`, `/privacy` | What the app is; what it stores and where (linked in the footer). |
@@ -84,7 +89,7 @@ npm run dev            # http://localhost:3004, browser-only mode with zero setu
 ```
 
 To work offline, or when the hosted site is unavailable, run it locally. Then, on the home
-page, choose **New league → A backup file** to open a backup downloaded from the hosted site.
+**New league** page, choose **A backup file** to open a backup downloaded from the hosted site.
 
 ## Configuration (cloud mode)
 
@@ -152,10 +157,10 @@ re-run `scripts/e2e/tutorial.mjs`.
 Layout:
 
 ```
-app/                 routes: / (leagues), /league/[id], /guide, /about, /privacy, /signin, /api/leagues
-components/          LeagueList, SiteHeader/SiteFooter, guide/ (the guide), workspace/ (the league editor)
+app/                 routes: / (leagues), /new, /league/[id] (?setup=1 = wizard), /guide, /about, /privacy, /signin, /api/leagues
+components/          LeagueList, NewLeague, SiteHeader + HeaderNav (phone menu), SiteFooter, guide/, workspace/ (the editor + SetupWizard)
 lib/brand.ts         the product name, in one place
-lib/engine/          pure scheduler: types, sports (each sport's words), dates, rules, engine, advice, sanitize, sample
+lib/engine/          pure scheduler: types, sports (each sport's words), dates, rules, engine, advice, readiness (setup checks), sanitize, sample
 lib/import/          facility spreadsheets: xlsx reader, CSV/paste, layout guessing
 lib/                 db, leagues (queries), guard (API auth + error refs), client/ (stores, backups)
 public/tutorial/     the guide's sample facility sheets, one per sport (scripts/make-tutorial-sheets.py)

@@ -52,6 +52,11 @@ lib/engine/       PURE, shared by client, API and scripts. Imports use .ts exten
   sample.ts       the "example league" AND the main verify fixture
   advice.ts       problem message → plain fix + the tab to make it on (matches engine
                   wording exactly; verify-engine asserts every engine message has advice)
+  readiness.ts    "can this league be scheduled?" per setup step: block / warn / info.
+                  ONE source for the setup wizard (blocks disable Next) and the Schedule
+                  tab's "Before you schedule". Checks real usable time per bracket (start
+                  window, days, "Open to"), spots vs games, dates vs games per team, pools
+                  of one. scripts/verify-readiness.ts: a league with no blocks must schedule
 lib/import/       facility availability sheets → dated court availability (pure)
   xlsx.ts         dependency-free .xlsx reader (zip via DecompressionStream; merged
                   cells filled; date-formatted numbers returned as {serial})
@@ -62,7 +67,11 @@ lib/db.ts         postgres client, `prepare: false` REQUIRED (Neon pooled). DATA
 lib/db/schema.ts  the whole DDL as a string; lib/db/ensure.ts runs it once per cold start
 lib/leagues.ts    every leagues query; user_id + deleted_at filtered IN the SQL
 lib/client/store.ts  cloud (API) and browser (localStorage) stores behind one interface
-components/workspace/  the league editor (tabs)
+components/workspace/  the league editor (tabs). SetupWizard.tsx (/league/<id>?setup=1, where
+                  /new sends a "Guided setup" league) reuses the tabs for its steps
+                  (CourtsTab `only`, SeasonTab `setup`, TeamsTab `requests`) so the
+                  wizard can't drift from the editor. Don't fork tab UI into the wizard.
+components/SiteHeader + HeaderNav  every page in the bar (desktop) or the Menu (phones)
 components/guide/ the guide + tutorial (client: follows a sport picker); app/guide is its
                   server wrapper. scripts/e2e/tutorial.mjs drives it word for word in every
                   sport; public/tutorial/<sport>-april-2027.* come from scripts/make-tutorial-sheets.py
