@@ -54,6 +54,11 @@ export default function SiteFooter() {
                                 Your leagues
                             </Link>
                         </li>
+                        <li>
+                            <Link href="/new" className="hover:underline">
+                                New league or tournament
+                            </Link>
+                        </li>
                     </ul>
                 </nav>
             </div>

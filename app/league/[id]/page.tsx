@@ -9,8 +9,10 @@ import { getLeague, type LeagueRecord } from "@/lib/leagues";
 
 export const metadata = { title: "League" };
 
-export default async function LeaguePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LeaguePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ setup?: string }> }) {
     const { id } = await params;
+    // ?setup=1 is where "New league" sends a blank league: the setup wizard.
+    const setup = (await searchParams).setup === "1";
 
     if (!isCloudConfigured()) {
         // Browser mode: the league lives in localStorage, which only the
@@ -18,7 +20,7 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
         return (
             <>
                 <ModeNotice missing={missingCloudConfig()} />
-                <Workspace mode="browser" id={id} initial={null} />
+                <Workspace mode="browser" id={id} initial={null} setup={setup} />
             </>
         );
     }
@@ -48,5 +50,5 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
         );
     }
     if (!rec) notFound();
-    return <Workspace mode="cloud" id={id} initial={rec} userKey={String(userId)} />;
+    return <Workspace mode="cloud" id={id} initial={rec} userKey={String(userId)} setup={setup} />;
 }

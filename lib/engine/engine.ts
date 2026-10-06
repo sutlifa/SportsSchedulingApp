@@ -177,7 +177,7 @@ function compileStatic(rule: Rule, liveLocations: Set<string>): ((inst: Instance
     }
 }
 
-function bracketHard(b: Bracket, inst: Instance): string | null {
+export function bracketHard(b: Bracket, inst: Instance): string | null {
     if (inst.bracketIds && !inst.bracketIds.has(b.id)) return `This time slot isn’t open to ${b.name}`;
     if (isTime(b.earliest) && inst.minutes < toMinutes(b.earliest))
         return `${b.name} can’t start before ${formatTime(b.earliest)}`;

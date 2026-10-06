@@ -20,7 +20,10 @@ export function slotCapacity(s: Slot, league: League): number {
 export function unitNames(ids: string[] | undefined, league: League): string {
     if (!ids?.length) return "";
     const all = league.locations.flatMap((l) => l.units);
-    return ids.map((id) => all.find((u) => u.id === id)?.name).filter(Boolean).join(", ");
+    return ids
+        .map((id) => all.find((u) => u.id === id)?.name)
+        .filter(Boolean)
+        .join(", ");
 }
 
 /**
@@ -36,7 +39,12 @@ function sequence(start: string, n: number): string[] {
     return Array.from({ length: n }, (_, i) => `${s} ${i + 1}`);
 }
 
-export default function CourtsTab({ doc, change, result, t }: TabProps) {
+/**
+ * `only` splits the tab in two for the setup wizard, which asks for the
+ * facilities and their time on separate steps. The dialogs stay mounted
+ * either way: the time step's import can still create a facility's units.
+ */
+export default function CourtsTab({ doc, change, result, t, only }: TabProps & { only?: "facilities" | "time" }) {
     const { data } = doc;
     const [editingLoc, setEditingLoc] = useState<Location | null>(null);
     const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
@@ -64,8 +72,7 @@ export default function CourtsTab({ doc, change, result, t }: TabProps) {
     const addSlots = () => {
         if (!locId || !times.length || !qDays.length || qAtOnce < 1) return;
         const add: Slot[] = [];
-        for (const day of qDays)
-            for (const time of times) add.push({ id: uid("s"), day, time, locationId: locId, capacity: qAtOnce, unitIds: qUnitIds, bracketIds: qBrackets });
+        for (const day of qDays) for (const time of times) add.push({ id: uid("s"), day, time, locationId: locId, capacity: qAtOnce, unitIds: qUnitIds, bracketIds: qBrackets });
         change((d) => withData(d, { slots: [...d.data.slots, ...add] }));
     };
 
@@ -77,229 +84,263 @@ export default function CourtsTab({ doc, change, result, t }: TabProps) {
 
     return (
         <div className="grid gap-8">
-            <section className="grid gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Facilities</h2>
-                        <p className="text-sm text-muted">
-                            Where {t.matches} are played. One is fine if everything happens in one place. Name each facility’s {t.units} (e.g. {t.unitLabel(0)},{" "}
-                            {t.unitLabel(1)}) so every {t.match} gets one.
-                        </p>
-                    </div>
-                    <button className="btn-primary" onClick={() => setEditingLoc({ id: "", name: "", address: "", mapUrl: "", notes: "", units: [] })}>
-                        Add facility
-                    </button>
-                </div>
-                {data.locations.length === 0 && <div className="card p-5 text-muted">No facilities yet.</div>}
-                <div className="grid gap-3 md:grid-cols-2">
-                    {data.locations.map((l) => {
-                        const href = locationLink(l);
-                        const n = data.slots.filter((s) => s.locationId === l.id).length;
-                        return (
-                            <div key={l.id} className="card flex items-start justify-between gap-3 p-4">
-                                <div className="min-w-0">
-                                    <div className="font-semibold">{l.name}</div>
-                                    {l.address && <div className="text-sm text-muted">{l.address}</div>}
-                                    <div className="mt-1 text-sm">
-                                        {l.units.length ? (
-                                            <span>
-                                                {l.units.length} {l.units.length === 1 ? t.unit : t.units}: {l.units.map((u) => u.name).join(", ")}
-                                            </span>
-                                        ) : (
-                                            <span className="text-muted">No named {t.units}</span>
-                                        )}
-                                    </div>
-                                    <div className="mt-1 flex flex-wrap gap-3 text-sm">
-                                        {href && (
-                                            <a className="font-semibold text-accent underline" href={href} target="_blank" rel="noreferrer">
-                                                {l.mapUrl ? "Open pinned map" : "Find on Google Maps"}
-                                            </a>
-                                        )}
-                                        <span className="text-muted">
-                                            {n} weekly time slot{n === 1 ? "" : "s"}
-                                        </span>
-                                    </div>
-                                </div>
-                                <button className="btn-secondary btn-sm" onClick={() => setEditingLoc(l)}>
-                                    Edit
-                                </button>
-                            </div>
-                        );
-                    })}
-                </div>
-            </section>
-
-            <section className="grid gap-3">
-                <div>
-                    <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Weekly {t.time}</h2>
-                    <p className="text-sm text-muted">
-                        A start time that repeats every week, with which {t.units} are free (or how many {t.matches} can be on at once). Restrict a slot to certain
-                        brackets to give age groups different schedules.
-                    </p>
-                </div>
-
-                {data.locations.length > 0 ? (
-                    <div className="card grid gap-3 p-4">
-                        <h3 className="font-semibold">Add time slots</h3>
-                        <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
-                            <Field label="Days">
-                                <DaysPicker value={qDays} onChange={setQDays} />
-                            </Field>
-                            <Field label="Start times" htmlFor="q-times" hint={times.length ? `Reads as: ${times.map(formatTime).join(", ")}` : "e.g. 9, 10:30, 1pm, 17:45"}>
-                                <input id="q-times" className="input" value={qTimes} onChange={(e) => setQTimes(e.target.value)} />
-                            </Field>
+            {only !== "time" && (
+                <section className="grid gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Facilities</h2>
+                            <p className="text-sm text-muted">
+                                Where {t.matches} are played. One is fine if everything happens in one place. Name each facility’s {t.units} (e.g. {t.unitLabel(0)},{" "}
+                                {t.unitLabel(1)}) so every {t.match} gets one.
+                            </p>
                         </div>
-                        <div className="flex flex-wrap items-end gap-3">
-                            <Field label="Facility" htmlFor="q-loc">
-                                <select
-                                    id="q-loc"
-                                    className="input"
-                                    value={locId}
-                                    onChange={(e) => {
-                                        setQLoc(e.target.value);
-                                        setQUnits(null);
-                                    }}
-                                >
-                                    {data.locations.map((l) => (
-                                        <option key={l.id} value={l.id}>
-                                            {l.name}
-                                        </option>
-                                    ))}
-                                </select>
-                            </Field>
-                            {qLocation?.units.length ? (
-                                <Field label={`${Units} free`} hint={`${qAtOnce} ${qAtOnce === 1 ? t.match : t.matches} at once${cpm > 1 ? ` (${cpm} ${t.units} per ${t.match})` : ""}`}>
-                                    <UnitToggles units={qLocation.units} value={qUnitIds} onChange={setQUnits} />
-                                </Field>
-                            ) : (
-                                <Field label={`${Matches} at once`} htmlFor="q-cap">
-                                    <NumberInput id="q-cap" value={qCap} min={1} max={100} onChange={setQCap} className="input w-24" />
-                                </Field>
-                            )}
-                            {data.brackets.length > 0 && (
-                                <Field label="Open to" hint="None selected = every bracket.">
-                                    <BracketToggles brackets={data.brackets} value={qBrackets} onChange={setQBrackets} />
-                                </Field>
-                            )}
-                            <button className="btn-primary" onClick={addSlots} disabled={!times.length || !qDays.length || qAtOnce < 1}>
-                                Add {qDays.length * times.length} slot{qDays.length * times.length === 1 ? "" : "s"}
-                            </button>
-                        </div>
+                        <button className="btn-primary" onClick={() => setEditingLoc({ id: "", name: "", address: "", mapUrl: "", notes: "", units: [] })}>
+                            Add facility
+                        </button>
                     </div>
-                ) : (
-                    <p className="text-sm text-muted">Add a facility first.</p>
-                )}
-
-                {slots.length > 0 && (
-                    <>
-                        <p className="text-sm text-muted tabular">
-                            {weeklySpots} {t.match} spots a week · {seasonSpots} across the season (after blackouts and facility uploads) · {needed} {t.matches} needed.
-                            {seasonSpots > 0 && needed > seasonSpots && <strong className="text-danger"> Not enough {t.time} for every {t.match}.</strong>}
-                        </p>
-                        <div className="card overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-border bg-surface-2 text-left">
-                                        <th className="label px-4 py-2">Day</th>
-                                        <th className="label px-4 py-2">Start</th>
-                                        <th className="label px-4 py-2">Facility</th>
-                                        <th className="label px-4 py-2">{Units}</th>
-                                        <th className="label px-4 py-2">At once</th>
-                                        <th className="label px-4 py-2">Open to</th>
-                                        <th className="px-4 py-2" />
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border">
-                                    {slots.map((s) => (
-                                        <tr key={s.id}>
-                                            <td className="px-4 py-2">{DAY_LONG[s.day]}</td>
-                                            <td className="px-4 py-2 font-mono tabular">{formatTime(s.time)}</td>
-                                            <td className="px-4 py-2">{data.locations.find((l) => l.id === s.locationId)?.name ?? <span className="text-danger">Deleted facility</span>}</td>
-                                            <td className="px-4 py-2">{unitNames(s.unitIds, data) || <span className="text-muted">—</span>}</td>
-                                            <td className="px-4 py-2 tabular">{slotCapacity(s, data)}</td>
-                                            <td className="px-4 py-2">{s.bracketIds.length ? s.bracketIds.map((id) => data.brackets.find((b) => b.id === id)?.name).filter(Boolean).join(", ") : "All"}</td>
-                                            <td className="px-4 py-2 text-right">
-                                                <button className="btn-ghost btn-sm" onClick={() => setEditingSlot(s)}>
-                                                    Edit
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </>
-                )}
-            </section>
-
-            <section className="grid gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
-                        <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Facility availability</h2>
-                        <p className="max-w-3xl text-sm text-muted">
-                            Upload the spreadsheet a facility sends with its dates, times and {t.units}. For every date it covers, it replaces that facility’s weekly
-                            slots; other dates keep the weekly pattern. A time marked closed or 0 {t.units} blocks it. If the sheet names its {t.units} (
-                            {t.unitLabel(0)}…), they’re added to the facility.
-                        </p>
-                    </div>
-                    <button className="btn-primary" onClick={() => setImporting(true)}>
-                        Upload a facility sheet
-                    </button>
-                </div>
-                {imported && <p className="text-sm font-semibold text-ok">{imported}</p>}
-                {data.availability.length === 0 && <div className="card p-5 text-sm text-muted">No facility sheets uploaded. The weekly time slots above are used for every date.</div>}
-                {data.locations
-                    .map((l) => ({ l, rows: data.availability.filter((a) => a.locationId === l.id) }))
-                    .filter((x) => x.rows.length > 0)
-                    .map(({ l, rows }) => {
-                        const byDate = new Map<string, typeof rows>();
-                        for (const a of [...rows].sort((x, y) => x.date.localeCompare(y.date) || x.time.localeCompare(y.time))) {
-                            if (!byDate.has(a.date)) byDate.set(a.date, []);
-                            byDate.get(a.date)!.push(a);
-                        }
-                        const ds = [...byDate.keys()];
-                        const total = rows.reduce((n, a) => n + (a.unitIds.length || a.courts), 0);
-                        const open = showAvail === l.id;
-                        return (
-                            <div key={l.id} className="card p-4">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
+                    {data.locations.length === 0 && <div className="card p-5 text-muted">No facilities yet.</div>}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        {data.locations.map((l) => {
+                            const href = locationLink(l);
+                            const n = data.slots.filter((s) => s.locationId === l.id).length;
+                            return (
+                                <div key={l.id} className="card flex items-start justify-between gap-3 p-4">
                                     <div className="min-w-0">
                                         <div className="font-semibold">{l.name}</div>
-                                        <div className="text-sm text-muted tabular">
-                                            {rows.length} time slots on {ds.length} dates, {formatDate(ds[0])} to {formatDate(ds[ds.length - 1])} · {total} {t.unit}-slots in total
+                                        {l.address && <div className="text-sm text-muted">{l.address}</div>}
+                                        <div className="mt-1 text-sm">
+                                            {l.units.length ? (
+                                                <span>
+                                                    {l.units.length} {l.units.length === 1 ? t.unit : t.units}: {l.units.map((u) => u.name).join(", ")}
+                                                </span>
+                                            ) : (
+                                                <span className="text-muted">No named {t.units}</span>
+                                            )}
+                                        </div>
+                                        <div className="mt-1 flex flex-wrap gap-3 text-sm">
+                                            {href && (
+                                                <a className="font-semibold text-accent underline" href={href} target="_blank" rel="noreferrer">
+                                                    {l.mapUrl ? "Open pinned map" : "Find on Google Maps"}
+                                                </a>
+                                            )}
+                                            <span className="text-muted">
+                                                {n} weekly time slot{n === 1 ? "" : "s"}
+                                            </span>
                                         </div>
                                     </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        <button className="btn-secondary btn-sm" onClick={() => setShowAvail(open ? null : l.id)}>
-                                            {open ? "Hide dates" : "Show dates"}
-                                        </button>
-                                        <ConfirmButton
-                                            className="btn-danger btn-sm"
-                                            label="Remove upload"
-                                            confirmLabel="Remove and go back to weekly slots?"
-                                            onConfirm={() => change((d) => withData(d, { availability: d.data.availability.filter((a) => a.locationId !== l.id) }))}
-                                        />
-                                    </div>
+                                    <button className="btn-secondary btn-sm" onClick={() => setEditingLoc(l)}>
+                                        Edit
+                                    </button>
                                 </div>
-                                {open && (
-                                    <div className="mt-3 grid max-h-80 gap-1.5 overflow-y-auto text-sm">
-                                        {ds.map((date) => (
-                                            <div key={date} className="flex flex-wrap items-center gap-1.5">
-                                                <span className="w-28 shrink-0 font-semibold">{formatDate(date)}</span>
-                                                {byDate.get(date)!.map((a) => (
-                                                    <span key={a.id} className={`chip tabular ${a.courts ? "bg-surface-2" : "bg-danger-soft text-danger"}`}>
-                                                        {formatTime(a.time)} ·{" "}
-                                                        {a.courts ? (a.unitIds.length ? unitNames(a.unitIds, data) : `${a.courts} ${a.courts === 1 ? t.unit : t.units}`) : "closed"}
-                                                    </span>
+                            );
+                        })}
+                    </div>
+                </section>
+            )}
+
+            {only !== "facilities" && (
+                <>
+                    <section className="grid gap-3">
+                        <div>
+                            <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Weekly {t.time}</h2>
+                            <p className="text-sm text-muted">
+                                A start time that repeats every week, with which {t.units} are free (or how many {t.matches} can be on at once). Restrict a slot to certain brackets
+                                to give age groups different schedules.
+                            </p>
+                        </div>
+
+                        {data.locations.length > 0 ? (
+                            <div className="card grid gap-3 p-4">
+                                <h3 className="font-semibold">Add time slots</h3>
+                                <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+                                    <Field label="Days">
+                                        <DaysPicker value={qDays} onChange={setQDays} />
+                                    </Field>
+                                    <Field
+                                        label="Start times"
+                                        htmlFor="q-times"
+                                        hint={times.length ? `Reads as: ${times.map(formatTime).join(", ")}` : "e.g. 9, 10:30, 1pm, 17:45"}
+                                    >
+                                        <input id="q-times" className="input" value={qTimes} onChange={(e) => setQTimes(e.target.value)} />
+                                    </Field>
+                                </div>
+                                <div className="flex flex-wrap items-end gap-3">
+                                    <Field label="Facility" htmlFor="q-loc">
+                                        <select
+                                            id="q-loc"
+                                            className="input"
+                                            value={locId}
+                                            onChange={(e) => {
+                                                setQLoc(e.target.value);
+                                                setQUnits(null);
+                                            }}
+                                        >
+                                            {data.locations.map((l) => (
+                                                <option key={l.id} value={l.id}>
+                                                    {l.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </Field>
+                                    {qLocation?.units.length ? (
+                                        <Field
+                                            label={`${Units} free`}
+                                            hint={`${qAtOnce} ${qAtOnce === 1 ? t.match : t.matches} at once${cpm > 1 ? ` (${cpm} ${t.units} per ${t.match})` : ""}`}
+                                        >
+                                            <UnitToggles units={qLocation.units} value={qUnitIds} onChange={setQUnits} />
+                                        </Field>
+                                    ) : (
+                                        <Field label={`${Matches} at once`} htmlFor="q-cap">
+                                            <NumberInput id="q-cap" value={qCap} min={1} max={100} onChange={setQCap} className="input w-24" />
+                                        </Field>
+                                    )}
+                                    {data.brackets.length > 0 && (
+                                        <Field label="Open to" hint="None selected = every bracket.">
+                                            <BracketToggles brackets={data.brackets} value={qBrackets} onChange={setQBrackets} />
+                                        </Field>
+                                    )}
+                                    <button className="btn-primary" onClick={addSlots} disabled={!times.length || !qDays.length || qAtOnce < 1}>
+                                        Add {qDays.length * times.length} slot{qDays.length * times.length === 1 ? "" : "s"}
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-muted">Add a facility first.</p>
+                        )}
+
+                        {slots.length > 0 && (
+                            <>
+                                <p className="text-sm text-muted tabular">
+                                    {weeklySpots} {t.match} spots a week · {seasonSpots} across the season (after blackouts and facility uploads) · {needed} {t.matches} needed.
+                                    {seasonSpots > 0 && needed > seasonSpots && (
+                                        <strong className="text-danger">
+                                            {" "}
+                                            Not enough {t.time} for every {t.match}.
+                                        </strong>
+                                    )}
+                                </p>
+                                <div className="card overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                        <thead>
+                                            <tr className="border-b border-border bg-surface-2 text-left">
+                                                <th className="label px-4 py-2">Day</th>
+                                                <th className="label px-4 py-2">Start</th>
+                                                <th className="label px-4 py-2">Facility</th>
+                                                <th className="label px-4 py-2">{Units}</th>
+                                                <th className="label px-4 py-2">At once</th>
+                                                <th className="label px-4 py-2">Open to</th>
+                                                <th className="px-4 py-2" />
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-border">
+                                            {slots.map((s) => (
+                                                <tr key={s.id}>
+                                                    <td className="px-4 py-2">{DAY_LONG[s.day]}</td>
+                                                    <td className="px-4 py-2 font-mono tabular">{formatTime(s.time)}</td>
+                                                    <td className="px-4 py-2">
+                                                        {data.locations.find((l) => l.id === s.locationId)?.name ?? <span className="text-danger">Deleted facility</span>}
+                                                    </td>
+                                                    <td className="px-4 py-2">{unitNames(s.unitIds, data) || <span className="text-muted">—</span>}</td>
+                                                    <td className="px-4 py-2 tabular">{slotCapacity(s, data)}</td>
+                                                    <td className="px-4 py-2">
+                                                        {s.bracketIds.length
+                                                            ? s.bracketIds
+                                                                  .map((id) => data.brackets.find((b) => b.id === id)?.name)
+                                                                  .filter(Boolean)
+                                                                  .join(", ")
+                                                            : "All"}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        <button className="btn-ghost btn-sm" onClick={() => setEditingSlot(s)}>
+                                                            Edit
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
+                    </section>
+
+                    <section className="grid gap-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="min-w-0">
+                                <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Facility availability</h2>
+                                <p className="max-w-3xl text-sm text-muted">
+                                    Upload the spreadsheet a facility sends with its dates, times and {t.units}. For every date it covers, it replaces that facility’s weekly slots;
+                                    other dates keep the weekly pattern. A time marked closed or 0 {t.units} blocks it. If the sheet names its {t.units} ({t.unitLabel(0)}…),
+                                    they’re added to the facility.
+                                </p>
+                            </div>
+                            <button className="btn-primary" onClick={() => setImporting(true)}>
+                                Upload a facility sheet
+                            </button>
+                        </div>
+                        {imported && <p className="text-sm font-semibold text-ok">{imported}</p>}
+                        {data.availability.length === 0 && (
+                            <div className="card p-5 text-sm text-muted">No facility sheets uploaded. The weekly time slots above are used for every date.</div>
+                        )}
+                        {data.locations
+                            .map((l) => ({ l, rows: data.availability.filter((a) => a.locationId === l.id) }))
+                            .filter((x) => x.rows.length > 0)
+                            .map(({ l, rows }) => {
+                                const byDate = new Map<string, typeof rows>();
+                                for (const a of [...rows].sort((x, y) => x.date.localeCompare(y.date) || x.time.localeCompare(y.time))) {
+                                    if (!byDate.has(a.date)) byDate.set(a.date, []);
+                                    byDate.get(a.date)!.push(a);
+                                }
+                                const ds = [...byDate.keys()];
+                                const total = rows.reduce((n, a) => n + (a.unitIds.length || a.courts), 0);
+                                const open = showAvail === l.id;
+                                return (
+                                    <div key={l.id} className="card p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <div className="min-w-0">
+                                                <div className="font-semibold">{l.name}</div>
+                                                <div className="text-sm text-muted tabular">
+                                                    {rows.length} time slots on {ds.length} dates, {formatDate(ds[0])} to {formatDate(ds[ds.length - 1])} · {total} {t.unit}-slots
+                                                    in total
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-wrap gap-2">
+                                                <button className="btn-secondary btn-sm" onClick={() => setShowAvail(open ? null : l.id)}>
+                                                    {open ? "Hide dates" : "Show dates"}
+                                                </button>
+                                                <ConfirmButton
+                                                    className="btn-danger btn-sm"
+                                                    label="Remove upload"
+                                                    confirmLabel="Remove and go back to weekly slots?"
+                                                    onConfirm={() => change((d) => withData(d, { availability: d.data.availability.filter((a) => a.locationId !== l.id) }))}
+                                                />
+                                            </div>
+                                        </div>
+                                        {open && (
+                                            <div className="mt-3 grid max-h-80 gap-1.5 overflow-y-auto text-sm">
+                                                {ds.map((date) => (
+                                                    <div key={date} className="flex flex-wrap items-center gap-1.5">
+                                                        <span className="w-28 shrink-0 font-semibold">{formatDate(date)}</span>
+                                                        {byDate.get(date)!.map((a) => (
+                                                            <span key={a.id} className={`chip tabular ${a.courts ? "bg-surface-2" : "bg-danger-soft text-danger"}`}>
+                                                                {formatTime(a.time)} ·{" "}
+                                                                {a.courts
+                                                                    ? a.unitIds.length
+                                                                        ? unitNames(a.unitIds, data)
+                                                                        : `${a.courts} ${a.courts === 1 ? t.unit : t.units}`
+                                                                    : "closed"}
+                                                            </span>
+                                                        ))}
+                                                    </div>
                                                 ))}
                                             </div>
-                                        ))}
+                                        )}
                                     </div>
-                                )}
-                            </div>
-                        );
-                    })}
-            </section>
+                                );
+                            })}
+                    </section>
+                </>
+            )}
 
             {importing && (
                 <ImportDialog
@@ -416,7 +457,13 @@ function BracketToggles({ brackets, value, onChange }: { brackets: { id: string;
             {brackets.map((b) => {
                 const on = value.includes(b.id);
                 return (
-                    <button key={b.id} type="button" aria-pressed={on} onClick={() => onChange(on ? value.filter((x) => x !== b.id) : [...value, b.id])} className={`rounded-md border px-2.5 py-1 text-sm font-semibold ${on ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface text-muted"}`}>
+                    <button
+                        key={b.id}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => onChange(on ? value.filter((x) => x !== b.id) : [...value, b.id])}
+                        className={`rounded-md border px-2.5 py-1 text-sm font-semibold ${on ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface text-muted"}`}
+                    >
                         {b.name}
                     </button>
                 );
@@ -490,8 +537,8 @@ function LocationDialog({
                 <div className="rounded-lg border border-border p-3">
                     <p className="font-semibold">{Units} at this facility</p>
                     <p className="text-sm text-muted">
-                        Name or number each {t.unit} ({t.unitLabel(0)}, {t.unitLabel(1)}…). Every {t.match} here is then given one, and schedules say which.
-                        Optional: without names, time slots just say how many {t.matches} fit at once.
+                        Name or number each {t.unit} ({t.unitLabel(0)}, {t.unitLabel(1)}…). Every {t.match} here is then given one, and schedules say which. Optional: without
+                        names, time slots just say how many {t.matches} fit at once.
                     </p>
                     {l.units.length > 0 && (
                         <ul className="mt-2 flex flex-wrap gap-1.5">
@@ -503,7 +550,12 @@ function LocationDialog({
                                         value={u.name}
                                         onChange={(e) => setL({ ...l, units: l.units.map((x) => (x.id === u.id ? { ...x, name: e.target.value } : x)) })}
                                     />
-                                    <button type="button" className="px-1.5 text-muted hover:text-danger" aria-label={`Remove ${u.name}`} onClick={() => setL({ ...l, units: l.units.filter((x) => x.id !== u.id) })}>
+                                    <button
+                                        type="button"
+                                        className="px-1.5 text-muted hover:text-danger"
+                                        aria-label={`Remove ${u.name}`}
+                                        onClick={() => setL({ ...l, units: l.units.filter((x) => x.id !== u.id) })}
+                                    >
                                         ✕
                                     </button>
                                 </li>
@@ -529,7 +581,13 @@ function LocationDialog({
                             Add {seqCount ? sequence(seqStart, seqCount).join(", ").slice(0, 60) : t.units}
                         </button>
                         <span className="text-sm text-muted">or</span>
-                        <input aria-label={`Add one ${t.unit} by name`} className="input w-40" value={one} onChange={(e) => setOne(e.target.value)} placeholder={`e.g. Center ${t.unit}`} />
+                        <input
+                            aria-label={`Add one ${t.unit} by name`}
+                            className="input w-40"
+                            value={one}
+                            onChange={(e) => setOne(e.target.value)}
+                            placeholder={`e.g. Center ${t.unit}`}
+                        />
                         <button
                             type="button"
                             className="btn-ghost"
@@ -555,11 +613,27 @@ function LocationDialog({
                         <li>Find the right pin, press Share, then Copy link.</li>
                         <li>Paste it below. Without one, schedules link to the search instead.</li>
                     </ol>
-                    <input id="loc-map" className="input mt-2" value={l.mapUrl} onChange={(e) => setL({ ...l, mapUrl: e.target.value })} placeholder="https://maps.app.goo.gl/…" aria-label="Google Maps link" />
-                    {!pinOk && <p className="mt-1 text-xs text-danger">That isn’t a Google Maps link. It should start with https://maps.app.goo.gl/ or https://www.google.com/maps/.</p>}
+                    <input
+                        id="loc-map"
+                        className="input mt-2"
+                        value={l.mapUrl}
+                        onChange={(e) => setL({ ...l, mapUrl: e.target.value })}
+                        placeholder="https://maps.app.goo.gl/…"
+                        aria-label="Google Maps link"
+                    />
+                    {!pinOk && (
+                        <p className="mt-1 text-xs text-danger">That isn’t a Google Maps link. It should start with https://maps.app.goo.gl/ or https://www.google.com/maps/.</p>
+                    )}
                 </div>
                 <Field label="Notes" htmlFor="loc-notes">
-                    <textarea id="loc-notes" className="input" rows={2} value={l.notes} onChange={(e) => setL({ ...l, notes: e.target.value })} placeholder="Parking, entrance, gate code…" />
+                    <textarea
+                        id="loc-notes"
+                        className="input"
+                        rows={2}
+                        value={l.notes}
+                        onChange={(e) => setL({ ...l, notes: e.target.value })}
+                        placeholder="Parking, entrance, gate code…"
+                    />
                 </Field>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
                     {loc.id ? (

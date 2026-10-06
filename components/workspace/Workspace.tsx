@@ -5,11 +5,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadText, fileSafe, makeBackup } from "@/lib/client/backup";
 import { storeFor, writeMirror, type LeagueRecord, type LeagueStore, type Mode } from "@/lib/client/store";
 import { audit, makeLookup } from "@/lib/engine/engine";
+import { firstOpenStep, readiness, type StepId } from "@/lib/engine/readiness";
 import { termsFor } from "@/lib/engine/sports";
 import BracketsTab from "./BracketsTab";
 import CourtsTab from "./CourtsTab";
 import ScheduleTab from "./ScheduleTab";
 import SeasonTab from "./SeasonTab";
+import SetupWizard from "./SetupWizard";
 import TeamsTab from "./TeamsTab";
 import type { Doc, Tab, TabProps } from "./types";
 
@@ -21,7 +23,7 @@ import type { Doc, Tab, TabProps } from "./types";
  * mount -- never during render, which would hydrate differently on the
  * server and the client.
  */
-export default function Workspace({ mode, id, initial, userKey = "" }: { mode: Mode; id: string; initial: LeagueRecord | null; userKey?: string }) {
+export default function Workspace({ mode, id, initial, userKey = "", setup = false }: { mode: Mode; id: string; initial: LeagueRecord | null; userKey?: string; setup?: boolean }) {
     const store = storeFor(mode);
     const [rec, setRec] = useState<LeagueRecord | null>(initial);
     const [missing, setMissing] = useState(false);
@@ -51,15 +53,10 @@ export default function Workspace({ mode, id, initial, userKey = "" }: { mode: M
         );
     }
     if (!rec) return <div className="mx-auto max-w-6xl px-4 py-10 text-muted">Loading league…</div>;
-    return <Editor store={store} mode={mode} rec={rec} userKey={userKey} />;
+    return <Editor store={store} mode={mode} rec={rec} userKey={userKey} setup={setup} />;
 }
 
-type Status =
-    | { kind: "saved" }
-    | { kind: "pending" }
-    | { kind: "saving" }
-    | { kind: "error"; message: string }
-    | { kind: "conflict"; message: string; current: LeagueRecord };
+type Status = { kind: "saved" } | { kind: "pending" } | { kind: "saving" } | { kind: "error"; message: string } | { kind: "conflict"; message: string; current: LeagueRecord };
 
 /** Tab names. The facilities tab is named for the sport: "Facilities & ice time". */
 const tabsFor = (time: string): { id: Tab; label: string }[] => [
@@ -70,9 +67,13 @@ const tabsFor = (time: string): { id: Tab; label: string }[] => [
     { id: "season", label: "Season" },
 ];
 
-function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode; rec: LeagueRecord; userKey: string }) {
+function Editor({ store, mode, rec, userKey, setup }: { store: LeagueStore; mode: Mode; rec: LeagueRecord; userKey: string; setup: boolean }) {
     const [doc, setDoc] = useState<Doc>({ name: rec.name, data: rec.data, schedule: rec.schedule });
     const [tab, setTab] = useState<Tab>(rec.data.teams.length ? "schedule" : "season");
+    // The setup wizard (null = the normal tabs). A new league opens on its
+    // first step; "Setup guide" reopens it at the first step still missing
+    // something.
+    const [step, setStep] = useState<StepId | null>(setup ? "basics" : null);
     const [status, setStatus] = useState<Status>({ kind: "saved" });
     const [saveTick, setSaveTick] = useState(0);
 
@@ -210,6 +211,15 @@ function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode;
         }
     };
 
+    const exitSetup = (to: Tab) => {
+        setStep(null);
+        setTab(to);
+        // Drop ?setup=1 so a reload opens the editor, not step 1 again. The
+        // history API (not router.replace) because nothing needs refetching.
+        if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
+        window.scrollTo({ top: 0 });
+    };
+
     const result = useMemo(() => audit(doc.data, doc.schedule.matches), [doc.data, doc.schedule.matches]);
     const lookup = useMemo(() => makeLookup(doc.data), [doc.data]);
     const t = termsFor(doc.data.settings.sport);
@@ -231,20 +241,35 @@ function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode;
                                 Help
                             </Link>
                         </div>
-                        <SaveStatus status={status} mode={mode} />
+                        <div className="flex flex-wrap items-center gap-3">
+                            <SaveStatus status={status} mode={mode} />
+                            {step ? (
+                                <button className="btn-secondary btn-sm" onClick={() => exitSetup(doc.data.teams.length ? "schedule" : "season")}>
+                                    Exit setup
+                                </button>
+                            ) : (
+                                <button className="btn-secondary btn-sm" onClick={() => setStep(firstOpenStep(readiness(doc.data, doc.name)))}>
+                                    Setup guide
+                                </button>
+                            )}
+                        </div>
                     </div>
-                    <nav className="-mb-px mt-2 flex gap-1 overflow-x-auto" aria-label="League sections">
-                        {tabsFor(t.time).map((x) => (
-                            <button
-                                key={x.id}
-                                onClick={() => setTab(x.id)}
-                                aria-current={tab === x.id ? "page" : undefined}
-                                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === x.id ? "border-accent text-fg" : "border-transparent text-muted hover:text-fg"}`}
-                            >
-                                {x.label}
-                            </button>
-                        ))}
-                    </nav>
+                    {step ? (
+                        <div className="h-3" />
+                    ) : (
+                        <nav className="-mb-px mt-2 flex gap-1 overflow-x-auto" aria-label="League sections">
+                            {tabsFor(t.time).map((x) => (
+                                <button
+                                    key={x.id}
+                                    onClick={() => setTab(x.id)}
+                                    aria-current={tab === x.id ? "page" : undefined}
+                                    className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === x.id ? "border-accent text-fg" : "border-transparent text-muted hover:text-fg"}`}
+                                >
+                                    {x.label}
+                                </button>
+                            ))}
+                        </nav>
+                    )}
                 </div>
             </div>
 
@@ -285,11 +310,12 @@ function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode;
             )}
 
             <div className="mx-auto max-w-6xl px-4 py-6">
-                {tab === "schedule" && <ScheduleTab {...props} />}
-                {tab === "teams" && <TeamsTab {...props} />}
-                {tab === "brackets" && <BracketsTab {...props} />}
-                {tab === "courts" && <CourtsTab {...props} />}
-                {tab === "season" && <SeasonTab {...props} leagueId={rec.id} store={store} userKey={userKey} />}
+                {step && <SetupWizard props={props} step={step} setStep={setStep} onFinish={() => exitSetup("schedule")} leagueId={rec.id} store={store} userKey={userKey} />}
+                {!step && tab === "schedule" && <ScheduleTab {...props} />}
+                {!step && tab === "teams" && <TeamsTab {...props} />}
+                {!step && tab === "brackets" && <BracketsTab {...props} />}
+                {!step && tab === "courts" && <CourtsTab {...props} />}
+                {!step && tab === "season" && <SeasonTab {...props} leagueId={rec.id} store={store} userKey={userKey} />}
             </div>
         </div>
     );

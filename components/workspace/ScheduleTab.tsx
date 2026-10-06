@@ -4,13 +4,14 @@ import { useMemo, useState } from "react";
 import { downloadText, copyText, fileSafe } from "@/lib/client/backup";
 import { DAY_SHORT, dowOf, formatDate, formatTime, isIsoDate, isoToDay, weekKey } from "@/lib/engine/dates";
 import { adviceFor } from "@/lib/engine/advice";
+import { readiness, type StepId } from "@/lib/engine/readiness";
 import { generate, type Verdict } from "@/lib/engine/engine";
 import { mapSearchUrl } from "@/lib/engine/sanitize";
 import { cap, sportText } from "@/lib/engine/sports";
 import { unitNames } from "./CourtsTab";
 import type { League, Location, Match } from "@/lib/engine/types";
 import MoveDialog from "./MoveDialog";
-import type { TabProps } from "./types";
+import type { Tab, TabProps } from "./types";
 import { BracketChip, Modal } from "./ui";
 
 type View = "dates" | "teams" | "courts";
@@ -20,6 +21,9 @@ export function locationLink(l: Location | undefined): string | null {
     if (l.mapUrl) return l.mapUrl;
     return l.address || l.name ? mapSearchUrl(l.name, l.address) : null;
 }
+
+/** Where each readiness step is edited outside the wizard. */
+const TAB_FOR_STEP: Record<StepId, Tab> = { basics: "season", season: "season", brackets: "brackets", facilities: "courts", time: "courts", teams: "teams", requests: "teams", review: "schedule" };
 
 export default function ScheduleTab({ doc, change, result, lookup, goTo, t: terms }: TabProps) {
     const w = (text: string) => sportText(text, terms);
@@ -41,11 +45,12 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo, t: term
     const teamName = (id: string) => lookup.team(id) ?? "Deleted team";
 
     // --- setup checklist ---------------------------------------------------
-    const todo: { text: string; tab: Parameters<typeof goTo>[0] }[] = [];
-    if (!isIsoDate(data.settings.seasonStart) || !isIsoDate(data.settings.seasonEnd)) todo.push({ text: "Set the season’s first and last day", tab: "season" });
-    if (!data.brackets.length) todo.push({ text: w("Add age brackets (10U, 12U…) and how many matches each team gets"), tab: "brackets" });
-    if (!data.locations.length || !data.slots.length) todo.push({ text: `Add facilities and weekly ${terms.time} (or upload a facility sheet)`, tab: "courts" });
-    if (data.teams.length < 2) todo.push({ text: "Add teams", tab: "teams" });
+    // The same checks the setup wizard runs (lib/engine/readiness.ts), so the
+    // two can't disagree about what's missing. Only the blocking ones here:
+    // the warnings are about how well it will schedule, not whether it can.
+    const todo = readiness(data, doc.name)
+        .filter((c) => c.level === "block")
+        .map((c) => ({ text: c.text, tab: TAB_FOR_STEP[c.step] }));
 
     // --- generation --------------------------------------------------------
     const inScope = (m: Match) => scope === "all" || m.bracketId === scope;
