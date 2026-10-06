@@ -197,6 +197,9 @@ export function readiness(league: League, name: string): Check[] {
     };
     const ruleLookup: NameLookup = { team: (id) => league.teams.find((x) => x.id === id)?.name, location: (id) => league.locations.find((x) => x.id === id)?.name, terms: t };
     const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    /** "1 game" / "5 games", "1 game spot" / "30 game spots". */
+    const games$ = (n: number) => plural(n, t.match, t.matches);
+    const spots$ = (n: number) => plural(n, `${t.match} spot`, `${t.match} spots`);
     /** Brackets whose own must-rules already explain a shortfall, so their teams don't repeat it. */
     const bracketShort = new Set<string>();
 
@@ -220,27 +223,27 @@ export function readiness(league: League, name: string): Check[] {
             bracketShort.add(b.id);
         } else {
             if (most > dates * s.maxPerDay) {
-                add("time", "block", `${b.name}: a team needs ${most} ${t.matches} but only ${dates} ${dates === 1 ? "date fits" : "dates fit"} it, at ${s.maxPerDay} a day at most.`);
+                add("time", "block", `${b.name}: a team needs ${games$(most)} but only ${dates} ${dates === 1 ? "date fits" : "dates fit"} it, at ${s.maxPerDay} a day at most.`);
                 bracketShort.add(b.id);
             } else if (most > 0) {
                 const tests = mustTests(b.rules);
                 const days = datesOf(usable.filter((i) => tests.every((ok) => ok(i))));
                 const limit = tightest(b.rules, days);
                 if (most > days.length * s.maxPerDay) {
-                    add("brackets", "block", `${b.name}: its must-rules leave ${plural(days.length, "date", "dates")} its teams can play, but a team needs ${most} ${t.matches}.`);
+                    add("brackets", "block", `${b.name}: its must-rules leave ${plural(days.length, "date", "dates")} its teams can play, but a team needs ${games$(most)}.`);
                     bracketShort.add(b.id);
                 } else if (limit && limit.fit < most) {
-                    add("brackets", "block", `${b.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${limit.fit} ${t.matches} in the season, but a team needs ${most}.`);
+                    add("brackets", "block", `${b.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${games$(limit.fit)} in the season, but a team needs ${most}.`);
                     bracketShort.add(b.id);
                 }
             }
-            if (games && spots < games) add("time", "block", `${b.name} needs ${games} ${t.matches} but only ${spots} ${t.match} spots fit it.`);
+            if (games && spots < games) add("time", "block", `${b.name} needs ${games$(games)} but only ${spots$(spots)} ${spots === 1 ? "fits" : "fit"} it.`);
             else if (games && spots < games * 1.5)
-                add("time", "warn", `${b.name} is tight: ${games} ${t.matches} for ${spots} ${t.match} spots that fit it. Some requests may not be met.`);
+                add("time", "warn", `${b.name} is tight: ${games$(games)} for ${spots$(spots)} that fit it. Some requests may not be met.`);
         }
     }
     const total = ctx.instances.reduce((n, i) => n + i.capacity, 0);
-    if (ctx.instances.length && needed && total < needed) add("time", "block", `${needed} ${t.matches} are needed but the season has only ${total} ${t.match} spots.`);
+    if (ctx.instances.length && needed && total < needed) add("time", "block", `${games$(needed)} ${needed === 1 ? "is" : "are"} needed but the season has only ${spots$(total)}.`);
 
     // --- teams --------------------------------------------------------------
     if (league.teams.length < 2) add("teams", "block", "Add the teams (at least two).");
@@ -269,7 +272,7 @@ export function readiness(league: League, name: string): Check[] {
             const want = teamTarget(x, b);
             if (want > sum - want) {
                 greedy = true;
-                add("teams", "block", `${x.name} wants ${want} ${t.matches} but the rest of its pool has only ${sum - want} to give.`);
+                add("teams", "block", `${x.name} wants ${games$(want)} but the rest of its pool has only ${sum - want} to give.`);
             }
         }
         if (!greedy && sum % 2 === 1) add("teams", "warn", `${label} has an odd total of ${t.matches}, so one team will get one fewer.`);
@@ -292,14 +295,14 @@ export function readiness(league: League, name: string): Check[] {
         // team's own -- the generator's own answer to "can it play here?".
         const days = datesOf(ctx.instances.filter((i) => tc.staticHard[i.idx] === null));
         if (tc.target > days.length * s.maxPerDay) {
-            add("requests", "block", `${team.name}: its must-requests leave ${plural(days.length, "date", "dates")} it can play, but it needs ${tc.target} ${t.matches}.`);
+            add("requests", "block", `${team.name}: its must-requests leave ${plural(days.length, "date", "dates")} it can play, but it needs ${games$(tc.target)}.`);
             continue;
         }
         // Days-apart and per-weekend/week caps, the bracket's and the team's
         // own, measured on the days this team can actually play.
         const limit = tightest([...tc.bracket.rules, ...team.rules], days);
         if (limit && limit.fit < tc.target)
-            add("requests", "block", `${team.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${limit.fit} ${t.matches} in the season, but it needs ${tc.target}.`);
+            add("requests", "block", `${team.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${games$(limit.fit)} in the season, but it needs ${tc.target}.`);
     }
     if (league.teams.length) add("requests", "info", `${withRules} of ${league.teams.length} teams have requests. Add any you’ve been sent; you can always add more later.`);
 

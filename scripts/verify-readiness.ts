@@ -295,7 +295,7 @@ const unplaced = (l: League) => {
         const l = clone(base);
         const tm = l.teams.find((t) => t.id === team.id)!;
         tm.rules = [satOnly, rule];
-        const hit = blocks(l, "x", "requests").find((c) => c.text.startsWith(`${tm.name}: “`) && /leaves room for only \d+ games in the season, but it needs 5\./.test(c.text));
+        const hit = blocks(l, "x", "requests").find((c) => c.text.startsWith(`${tm.name}: “`) && /leaves room for only \d+ games? in the season, but it needs 5\./.test(c.text));
         assert(hit, `${label} cap blocks on requests (${blocks(l, "x").map((c) => c.text).join(" | ")})`);
         const r = generate(l, [], { scope: "all", seed: 1, maxAttempts: 5, timeBudgetMs: 1e9, now: () => 0 });
         const got = r.matches.filter((m) => m.date && (m.home === tm.id || m.away === tm.id)).length;
@@ -325,7 +325,10 @@ const unplaced = (l: League) => {
             team.rules = [...team.rules, { id: `f${k}${team.id}`, type, mode: "must", n } as Rule];
             if (rnd() < 0.3) team.rules.push({ id: `d${k}${team.id}`, type: "only_days", mode: "must", days: [6, 0] });
         }
-        const named = readiness(l, "x").filter((c) => c.level === "block" && /leaves room for only/.test(c.text));
+        const all = readiness(l, "x");
+        // Counts agree with their noun ("only 1 games" was a Tester find).
+        for (const c of all) assert(!/\b1 (games|matches|\w+ spots|dates)\b/.test(c.text), `singular count: “${c.text}”`);
+        const named = all.filter((c) => c.level === "block" && /leaves room for only/.test(c.text));
         if (!named.length) continue;
         const r = generate(l, [], { scope: "all", seed: 1, maxAttempts: 3, timeBudgetMs: 1e9, now: () => 0 });
         for (const c of named) {
@@ -338,6 +341,21 @@ const unplaced = (l: League) => {
         }
     }
     assert(proofs > 5, `fuzz exercised the proofs (${proofs})`);
+}
+
+// The Tester's repro C: one fit game reads "only 1 game", not "1 games".
+{
+    const l = clone(ex);
+    l.settings.maxPerDay = 3;
+    let d = isoToDay(l.settings.seasonStart);
+    while (new Date(dayToIso(d) + "T12:00:00Z").getUTCDay() !== 6) d++;
+    l.settings.seasonStart = l.settings.seasonEnd = dayToIso(d);
+    l.settings.blackouts = [];
+    l.brackets.forEach((b) => (b.matches = 3));
+    const tm = l.teams.find((t) => t.bracketId === l.brackets.find((b) => b.name === "14U")!.id)!;
+    tm.rules = [{ id: "r1", type: "max_per_weekend", mode: "must", n: 1 }];
+    const hit = blocks(l, "x", "requests").find((c) => c.text.startsWith(`${tm.name}:`));
+    assert(hit && /leaves room for only 1 game in the season, but it needs 3\.$/.test(hit.text), `singular wording: ${hit?.text}`);
 }
 
 console.log(`verify-readiness: ${checks} checks passed`);
