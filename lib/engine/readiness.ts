@@ -94,9 +94,19 @@ export function readiness(league: League, name: string): Check[] {
         if (!ctx.instances.length) continue;
         const usable = ctx.instances.filter((i) => bracketHard(b, i) === null);
         const spots = usable.reduce((n, i) => n + i.capacity, 0);
+        // A team plays at most maxPerDay a day, so its games need that many
+        // distinct dates. Capacity alone misses this: 4 teams × 99 games fit
+        // in 220 spots but not in an 11-week season.
+        const most = bracketTeams.reduce((n, x) => Math.max(n, teamTarget(x, b)), 0);
+        const dates = new Set(usable.map((i) => i.date)).size;
         if (!usable.length) add("time", "block", `${b.name} has no ${t.time} it can use: check its start window and days, and each slot’s “Open to”.`);
-        else if (games && spots < games) add("time", "block", `${b.name} needs ${games} ${t.matches} but only ${spots} ${t.match} spots fit it.`);
-        else if (games && spots < games * 1.5) add("time", "warn", `${b.name} is tight: ${games} ${t.matches} for ${spots} ${t.match} spots that fit it. Some requests may not be met.`);
+        else {
+            if (most > dates * s.maxPerDay)
+                add("time", "block", `${b.name}: a team needs ${most} ${t.matches} but only ${dates} date${dates === 1 ? "" : "s"} fit it, at ${s.maxPerDay} a day at most.`);
+            if (games && spots < games) add("time", "block", `${b.name} needs ${games} ${t.matches} but only ${spots} ${t.match} spots fit it.`);
+            else if (games && spots < games * 1.5)
+                add("time", "warn", `${b.name} is tight: ${games} ${t.matches} for ${spots} ${t.match} spots that fit it. Some requests may not be met.`);
+        }
     }
     const total = ctx.instances.reduce((n, i) => n + i.capacity, 0);
     if (ctx.instances.length && needed && total < needed) add("time", "block", `${needed} ${t.matches} are needed but the season has only ${total} ${t.match} spots.`);
@@ -115,8 +125,7 @@ export function readiness(league: League, name: string): Check[] {
         const b = brackets.get(members[0].bracketId)!;
         const label = `${b.name}${members[0].pool.trim() ? ` · Pool ${members[0].pool.trim()}` : ""}`;
         if (members.length === 1) add("teams", "block", `${members[0].name} is the only team in ${label}, so it has nobody to play.`);
-        else if (members.reduce((n, x) => n + teamTarget(x, b), 0) % 2 === 1)
-            add("teams", "warn", `${label} has an odd total of ${t.matches}, so one team will get one fewer.`);
+        else if (members.reduce((n, x) => n + teamTarget(x, b), 0) % 2 === 1) add("teams", "warn", `${label} has an odd total of ${t.matches}, so one team will get one fewer.`);
     }
     for (const b of league.brackets) if (!teamsByBracket.get(b.id)) add("teams", "warn", `${b.name} has no teams yet.`);
 

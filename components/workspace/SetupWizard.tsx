@@ -80,7 +80,9 @@ export default function SetupWizard({
                 </div>
                 <ol className="mt-3 flex gap-1 overflow-x-auto pb-1">
                     {SETUP_STEPS.map((s, i) => {
-                        const open = checks.some((c) => c.step === s && c.level === "block");
+                        // Ticked only when this step AND every one before it is
+                        // clear: "Requests ✓" next to an empty league read as done.
+                        const open = checks.some((c) => SETUP_STEPS.indexOf(c.step) <= i && c.level === "block");
                         const current = s === step;
                         return (
                             <li key={s} className="shrink-0">
@@ -203,7 +205,7 @@ export default function SetupWizard({
                 </>
             )}
 
-            <nav className="sticky bottom-0 z-20 -mx-4 border-t border-border bg-bg/95 px-4 py-3 backdrop-blur" aria-label="Setup navigation">
+            <nav className="sticky bottom-2 z-20 rounded-xl border border-border bg-surface/95 px-4 py-3 shadow-lg backdrop-blur" aria-label="Setup navigation">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         {prev && (
