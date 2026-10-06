@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { APP_NAME } from "@/lib/brand";
 import { cap, SPORT_IDS, SPORTS, sportText, type SportId, type Terms } from "@/lib/engine/sports";
 import { B, H2, H3, SportPicker, useGuideSport } from "./parts";
@@ -47,6 +48,14 @@ const TOC: [string, string][] = [
 
 export default function GuideContent() {
     const [sport, choose] = useGuideSport();
+    // The tutorial used to be a section of this page. Old bookmarks and
+    // links (/guide#tutorial, /guide#t-create...) land here with an anchor
+    // that no longer exists; send them to the same place on /tutorial. The
+    // hash never reaches the server, so this can only be done here.
+    useEffect(() => {
+        const h = window.location.hash;
+        if (h === "#tutorial" || h.startsWith("#t-")) window.location.replace(`/tutorial${h === "#tutorial" ? "" : h}`);
+    }, []);
     const t: Terms = SPORTS[sport];
     return <Guide t={t} sport={sport} choose={choose} />;
 }
