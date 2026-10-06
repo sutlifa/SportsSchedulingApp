@@ -11,7 +11,7 @@ const BAR: Item[] = [
     { href: "/new", label: "New league", primary: true },
     { href: "/", label: "Your leagues" },
     { href: "/guide", label: "Guide" },
-    { href: "/guide#tutorial", label: "Tutorial" },
+    { href: "/tutorial", label: "Tutorial" },
     { href: "/about", label: "About" },
 ];
 
@@ -28,7 +28,7 @@ const MENU: { heading: string; items: Item[] }[] = [
         heading: "Help",
         items: [
             { href: "/guide", label: "Guide" },
-            { href: "/guide#tutorial", label: "Step-by-step tutorial" },
+            { href: "/tutorial", label: "Step-by-step tutorial" },
             { href: "/guide#errors", label: "Errors and fixes" },
             { href: "/guide#faq", label: "Questions" },
         ],
@@ -73,8 +73,8 @@ export default function HeaderNav({ account, accountMenu }: { account: React.Rea
         };
     }, [open]);
 
-    // Hash links count as "here" only by their path, so Guide lights up on
-    // /guide while Tutorial (a hash on the same page) doesn't double up.
+    // Hash links (Errors and fixes, Questions: sections of /guide) never
+    // count as "here", so only Guide lights up on /guide.
     const here = (href: string) => !href.includes("#") && (href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`));
     const close = () => setOpen(false);
 

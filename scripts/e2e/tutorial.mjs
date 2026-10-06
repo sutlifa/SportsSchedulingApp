@@ -26,7 +26,7 @@ const SPORT_LIST = (process.env.SPORTS ?? "hockey,soccer,tennis").split(",").map
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE ?? "playwright");
 const exe = process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium";
 const browser = await chromium.launch(existsSync(exe) ? { executablePath: exe } : {});
-const guideSrc = readFileSync(new URL("../../components/guide/GuideContent.tsx", import.meta.url), "utf8");
+const guideSrc = readFileSync(new URL("../../components/guide/TutorialContent.tsx", import.meta.url), "utf8");
 const list = (name) => new RegExp(`export const ${name} = \`([\\s\\S]*?)\`;`).exec(guideSrc)[1];
 
 let total = 0;
@@ -119,6 +119,13 @@ async function walk(sport, t) {
             await page.getByRole("button", { name: "Add bracket" }).click();
             await page.locator("#br-name").fill(name);
             ok((await page.locator("#br-matches").inputValue()) === "5", "matches default to 5");
+            if (name === "10U") {
+                // Clearing a number field and typing showed "015" (a reported bug).
+                await page.locator("#br-matches").fill("");
+                await page.keyboard.type("15");
+                ok((await page.locator("#br-matches").inputValue()) === "15", `no leading zero: ${await page.locator("#br-matches").inputValue()}`);
+                await page.locator("#br-matches").fill("5");
+            }
             if (latest) await page.locator("#br-latest").fill(latest);
             await page.getByRole("button", { name: "Save bracket" }).click();
         }
@@ -398,8 +405,18 @@ async function walk(sport, t) {
         ok(schedule.matches.filter((m) => m.bracketId === tenU).every((m) => toMinutes(m.time) <= toMinutes("17:30")), "no 10U after 5:30 PM");
         ok(!schedule.matches.some((m) => m.date === "2027-03-27" || m.date === "2027-03-28"), "blackout weekend empty");
 
-        STEP("guide in this sport, sample files");
-        await page.goto(`${BASE}/guide?sport=${sport}`);
+        STEP("tutorial page in this sport, sample files");
+        await page.goto(BASE);
+        const site = page.getByRole("navigation", { name: "Site" });
+        await site.getByRole("link", { name: "Guide", exact: true }).click();
+        await page.waitForURL(/\/guide$/);
+        await see("How it works");
+        ok((await page.locator("#t-create").count()) === 0, "the guide no longer holds the tutorial");
+        await site.getByRole("link", { name: "Tutorial", exact: true }).click();
+        await page.waitForURL(/\/tutorial$/);
+        ok((await page.locator("#how-it-works").count()) === 0, "the tutorial is its own page");
+        ok((await site.getByRole("link", { name: "Tutorial", exact: true }).getAttribute("aria-current")) === "page", "Tutorial is marked current");
+        await page.goto(`${BASE}/tutorial?sport=${sport}`);
         await see(`Spring 2027 Youth ${t.name}`);
         await see(`Imported 12 ${t.time} slots on 5 dates from ${file}.xlsx.`, { exact: false });
         for (const ext of ["xlsx", "csv"]) ok((await page.request.get(`${BASE}/tutorial/${file}.${ext}`)).ok(), `${file}.${ext} is served`);

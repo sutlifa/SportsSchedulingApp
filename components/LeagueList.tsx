@@ -150,7 +150,7 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                             </Link>
                             : guided setup walks you through it, or <strong className="text-fg">start from the example</strong> to see a finished schedule straight away. Or follow
                             the{" "}
-                            <Link href="/guide#tutorial" className="font-semibold text-accent underline">
+                            <Link href="/tutorial" className="font-semibold text-accent underline">
                                 step-by-step tutorial
                             </Link>{" "}
                             to build one from scratch.
@@ -177,7 +177,7 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
             </section>
 
             <aside className="grid content-start gap-4">
-                <Link href="/guide#tutorial" className="card block border-accent/40 bg-accent-soft p-4 hover:border-accent">
+                <Link href="/tutorial" className="card block border-accent/40 bg-accent-soft p-4 hover:border-accent">
                     <div className="font-display text-xl font-bold uppercase tracking-wide">New here?</div>
                     <p className="mt-1 text-sm">
                         Follow the step-by-step tutorial: build a full league in your sport with brackets, facilities, a facility spreadsheet and coach or captain requests in about

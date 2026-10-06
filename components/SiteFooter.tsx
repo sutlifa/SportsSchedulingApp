@@ -21,7 +21,12 @@ export default function SiteFooter() {
                     <ul className="grid gap-1">
                         <li>
                             <Link href="/guide" className="hover:underline">
-                                Guide & tutorial
+                                Guide
+                            </Link>
+                        </li>
+                        <li>
+                            <Link href="/tutorial" className="hover:underline">
+                                Tutorial
                             </Link>
                         </li>
                         <li>

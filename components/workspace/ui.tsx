@@ -198,11 +198,21 @@ export function NumberInput({ id, value, onChange, min = 0, max = 99, placeholde
             className={className}
             placeholder={placeholder}
             value={value ?? ""}
+            // Selecting on focus means typing replaces the number, instead of
+            // landing next to it ("5" + "15" = "515").
+            onFocus={(e) => e.target.select()}
             onChange={(e) => {
                 const v = e.target.value;
                 if (v === "") return onChange(null);
                 const num = Math.round(Number(v));
-                if (Number.isFinite(num)) onChange(Math.min(max, Math.max(min, num)));
+                if (!Number.isFinite(num)) return;
+                const next = Math.min(max, Math.max(min, num));
+                // React leaves a number input's text alone when it parses to
+                // the value it already has, so "015" (typed after a cleared
+                // field fell back to 0) stayed on screen as 015. Write the
+                // clean number back whenever the text differs from it.
+                if (v !== String(next)) e.target.value = String(next);
+                onChange(next);
             }}
         />
     );

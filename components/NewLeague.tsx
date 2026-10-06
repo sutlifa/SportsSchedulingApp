@@ -135,7 +135,7 @@ export default function NewLeague({ mode }: { mode: Mode }) {
                     </ol>
                     <p className="mt-2 text-muted">Everything saves as you go, so you can stop and come back.</p>
                 </div>
-                <Link href="/guide#tutorial" className="card block border-accent/40 bg-accent-soft p-4 hover:border-accent">
+                <Link href="/tutorial" className="card block border-accent/40 bg-accent-soft p-4 hover:border-accent">
                     <div className="font-display text-xl font-bold uppercase tracking-wide">Want a practice run?</div>
                     <p className="mt-1">
                         The tutorial builds a full league in your sport, with sample teams and a facility spreadsheet, in about 20 minutes.{" "}

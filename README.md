@@ -10,10 +10,11 @@ It works for hockey, soccer, tennis, pickleball, basketball, volleyball, basebal
 lacrosse, football and any other sport. Each league uses its own sport's words: *ice time* and
 *Sheet A* for hockey, *field time* and *Field 3* for soccer, *court time* and *matches* for tennis.
 
-**Using the app? Open the in-app guide at `/guide`** ([source](components/guide/GuideContent.tsx)).
-It's linked from the header and footer, and its tutorial follows whichever sport you pick. The
-tutorial builds a complete league in about 20 minutes, with a sample facility spreadsheet in that
-sport. The guide also explains every error message.
+**Using the app? Open the in-app guide at `/guide` and the tutorial at `/tutorial`**
+([guide source](components/guide/GuideContent.tsx), [tutorial source](components/guide/TutorialContent.tsx)).
+Both are in the header and footer and follow whichever sport you pick. The tutorial builds a
+complete league in about 20 minutes, with a sample facility spreadsheet in that sport. The guide
+explains how everything works and every error message.
 
 ---
 
@@ -68,7 +69,8 @@ wide screens, and a **Menu** button on phones that also lists Errors and fixes, 
 | `/new` | New league or tournament: pick the sport, then **Guided setup**, the example league, or a backup file. |
 | `/league/<id>?setup=1` | The setup wizard: name & sport → season → brackets & pools → facilities → *ice/field/court* time → teams → requests → review & schedule. Each step lists what's still **Needed** (Next stays disabled until it's done), what to **Check**, and notes. **Exit setup** opens the full editor; **Setup guide** reopens the wizard at the first unfinished step. |
 | `/league/<id>` | The league: **Schedule · Teams · Brackets & pools · Facilities & *ice/field/court* time · Season** tabs. |
-| `/guide` | How it works, the tutorial in your sport (`/guide?sport=hockey`), spreadsheet rules, rule reference, every error and its fix. |
+| `/guide` | How it works, spreadsheet rules, rule reference, every error and its fix, in your sport (`/guide?sport=hockey`). |
+| `/tutorial` | Step by step: build a complete league in your sport (`/tutorial?sport=hockey`), with a sample facility spreadsheet. |
 | `/about`, `/privacy` | What the app is; what it stores and where (linked in the footer). |
 | `/signin` | Google sign-in (only when the site is connected to its database). |
 
@@ -140,7 +142,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/<throwaway> npm run ver
 npm run sheets          # regenerate the guide's sample facility sheets (needs python3 + openpyxl)
 ```
 
-The end-to-end tutorial check drives the `/guide` tutorial in a real browser, in each sport, and
+The end-to-end tutorial check drives the `/tutorial` page in a real browser, in each sport, and
 verifies every expected result. Playwright is intentionally not a dependency, so install it
 anywhere:
 
@@ -151,19 +153,19 @@ PLAYWRIGHT_MODULE=/tmp/pw/node_modules/playwright/index.mjs SPORTS=hockey,soccer
   node --experimental-strip-types --no-warnings scripts/e2e/tutorial.mjs
 ```
 
-If you change the guide's tutorial, any UI label it mentions, or the sample sheets, update and
+If you change the tutorial, any UI label it mentions, or the sample sheets, update and
 re-run `scripts/e2e/tutorial.mjs`.
 
 Layout:
 
 ```
-app/                 routes: / (leagues), /new, /league/[id] (?setup=1 = wizard), /guide, /about, /privacy, /signin, /api/leagues
-components/          LeagueList, NewLeague, SiteHeader + HeaderNav (phone menu), SiteFooter, guide/, workspace/ (the editor + SetupWizard)
+app/                 routes: / (leagues), /new, /league/[id] (?setup=1 = wizard), /guide, /tutorial, /about, /privacy, /signin, /api/leagues
+components/          LeagueList, NewLeague, SiteHeader + HeaderNav (phone menu), SiteFooter, guide/ (guide, tutorial, shared parts), workspace/ (the editor + SetupWizard)
 lib/brand.ts         the product name, in one place
 lib/engine/          pure scheduler: types, sports (each sport's words), dates, rules, engine, advice, readiness (setup checks), sanitize, sample
 lib/import/          facility spreadsheets: xlsx reader, CSV/paste, layout guessing
 lib/                 db, leagues (queries), guard (API auth + error refs), client/ (stores, backups)
-public/tutorial/     the guide's sample facility sheets, one per sport (scripts/make-tutorial-sheets.py)
+public/tutorial/     the tutorial's sample facility sheets, one per sport (scripts/make-tutorial-sheets.py)
 scripts/             verify-*.ts (headless invariants), e2e/tutorial.mjs, migrate.ts
 ```
 

@@ -76,8 +76,10 @@ components/workspace/  the league editor (tabs). SetupWizard.tsx (/league/<id>?s
                   (CourtsTab `only`, SeasonTab `setup`, TeamsTab `requests`) so the
                   wizard can't drift from the editor. Don't fork tab UI into the wizard.
 components/SiteHeader + HeaderNav  every page in the bar (desktop) or the Menu (phones)
-components/guide/ the guide + tutorial (client: follows a sport picker); app/guide is its
-                  server wrapper. scripts/e2e/tutorial.mjs drives it word for word in every
+components/guide/ GuideContent (/guide) and TutorialContent (/tutorial) -- separate pages on
+                  purpose (the header links to both), sharing parts.tsx (sport picker + its
+                  stored choice, step styles); app/guide and app/tutorial are their server
+                  wrappers. scripts/e2e/tutorial.mjs drives the tutorial word for word in every
                   sport; public/tutorial/<sport>-april-2027.* come from scripts/make-tutorial-sheets.py
 app/about, app/privacy  linked from SiteFooter. Privacy states what the code does — keep it true
 scripts/verify-engine.ts  headless invariants — run it, don't eyeball
@@ -115,8 +117,8 @@ match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don'
 - **API routes:** guard → try/catch → human message; 500s go through `serverError()` in
   lib/guard.ts, which logs under an UPPERCASE label with a reference code and returns
   "… (Reference ABC123)" so a user's screenshot finds the log line.
-- **The guide is tested.** Changing a UI label or behaviour that /guide's tutorial mentions
-  means updating the guide AND scripts/e2e/tutorial.mjs, and re-running it (all sports:
+- **The tutorial is tested.** Changing a UI label or behaviour that /tutorial mentions
+  means updating the tutorial AND scripts/e2e/tutorial.mjs, and re-running it (all sports:
   SPORTS=hockey,tennis,pickleball,soccer,basketball,volleyball,baseball,softball,lacrosse,football,other).
 - **Never rename storage keys or the backup tag** to match the brand: `tennis-scheduler.leagues.v1`,
   `courtside.mirror.*` and the accepted `courtside-league` backup tag hold real users' data.
