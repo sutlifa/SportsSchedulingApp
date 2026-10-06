@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { isCloudConfigured, missingCloudConfig } from "../../lib/authConfig.ts";
+import { cleanEnv, isCloudConfigured, missingCloudConfig } from "../../lib/authConfig.ts";
 
 const VARS = ["DATABASE_URL", "POSTGRES_URL", "AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"] as const;
 const FULL = { DATABASE_URL: "postgres://u:p@host-pooler/db", AUTH_SECRET: "secret", AUTH_GOOGLE_ID: "id.apps.googleusercontent.com", AUTH_GOOGLE_SECRET: "gsecret" };
@@ -52,15 +52,35 @@ describe("isCloudConfigured / missingCloudConfig", () => {
         assert.ok(!missingCloudConfig().join(" ").includes("super-secret-value"));
     });
 
-    test(
-        "a whitespace-only value counts as missing",
-        { todo: "BUG: missingCloudConfig tests truthiness (lib/authConfig.ts:28-31), so AUTH_GOOGLE_ID=\"  \" counts as set and the site turns on cloud mode -- while auth.ts's cleanEnv() trims the same value to undefined, so Google sign-in then fails" },
-        () => {
-            for (const k of ["DATABASE_URL", "AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"] as const) {
-                set({ ...FULL, [k]: "   " });
-                assert.deepEqual(missingCloudConfig(), [k], k);
-                set(FULL);
+    test("a whitespace-only (or quotes-only) value counts as missing, as auth.ts reads it", () => {
+        for (const k of ["DATABASE_URL", "AUTH_SECRET", "AUTH_GOOGLE_ID", "AUTH_GOOGLE_SECRET"] as const) {
+            for (const blank of ["   ", "\n", " \t ", '""', "''", ' " " ']) {
+                set({ ...FULL, [k]: blank });
+                assert.deepEqual(missingCloudConfig(), [k], `${k}=${JSON.stringify(blank)}`);
+                assert.equal(isCloudConfigured(), false);
             }
+            set(FULL);
         }
-    );
+    });
+
+    test("a padded or quoted real value still counts as set", () => {
+        set({ AUTH_SECRET: "  s  ", AUTH_GOOGLE_ID: '"id"\n', AUTH_GOOGLE_SECRET: "'x'", DATABASE_URL: " postgres://u@h/d " });
+        assert.equal(isCloudConfigured(), true);
+    });
+
+    test("a blank DATABASE_URL falls through to POSTGRES_URL", () => {
+        set({ ...FULL, DATABASE_URL: "  ", POSTGRES_URL: "postgres://u:p@host/db" });
+        assert.equal(isCloudConfigured(), true);
+    });
+});
+
+describe("cleanEnv", () => {
+    test("trims spaces, line breaks and surrounding quotes; blank is undefined", () => {
+        assert.equal(cleanEnv("  abc \n"), "abc");
+        assert.equal(cleanEnv('"abc"'), "abc");
+        assert.equal(cleanEnv("'abc'"), "abc");
+        assert.equal(cleanEnv(' " abc " '), "abc");
+        assert.equal(cleanEnv("a'b\"c"), "a'b\"c", "inner quotes are kept");
+        for (const v of [undefined, "", "   ", '""', "''"]) assert.equal(cleanEnv(v), undefined, JSON.stringify(v));
+    });
 });

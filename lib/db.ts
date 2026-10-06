@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { cleanEnv } from "./authConfig";
 
 // Falls back to an empty string instead of throwing at module load so that
 // `next build`'s route analysis (which imports this module without ever
@@ -14,7 +15,10 @@ import postgres from "postgres";
 // type" on the next query.
 // DATABASE_URL is what Vercel's Neon integration sets by default; POSTGRES_URL
 // is the same pooled string under the name some integration setups use.
-export const databaseUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL || "";
+// Read through cleanEnv, like lib/authConfig.ts: a whitespace-only
+// DATABASE_URL must fall through to POSTGRES_URL (or to "no database"), not be
+// handed to postgres.js while the config check says it's missing.
+export const databaseUrl = cleanEnv(process.env.DATABASE_URL) || cleanEnv(process.env.POSTGRES_URL) || "";
 
 // SSL is required for Neon; a localhost database (scripts/verify-db.ts runs
 // against a throwaway local Postgres) usually has no certificate at all.

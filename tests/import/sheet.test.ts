@@ -214,15 +214,16 @@ describe("guessMapping", () => {
         assert.deepEqual(rows(parse("Date,Start,Courts\n3/6/2027,9,4\n3/6/2027,13,2\n")), [["2027-03-06", "09:00", 4], ["2027-03-06", "13:00", 2]]);
     });
 
-    test(
-        "a CSV courts column of bare numbers isn't taken for the time column when there is no time heading",
-        { todo: "BUG: guessMapping's time test only exempts NUMBER cells (lib/import/sheet.ts:378); in a CSV every cell is text, so 'Date,Courts / 3/6/2027,4' maps Courts as the time (4 -> 16:00) and imports 1 court at 4 PM instead of 4 courts" },
-        () => {
-            const m = guess("Date,Courts\n3/6/2027,4\n3/7/2027,2\n");
-            assert.equal(m.time, null);
-            assert.equal(m.courts, 1);
-        }
-    );
+    test("a CSV courts column of bare numbers isn't taken for the time column when there is no time heading", () => {
+        const m = guess("Date,Courts\n3/6/2027,4\n3/7/2027,2\n");
+        assert.deepEqual([m.time, m.courts], [null, 1]);
+        // With the time riding in the date cell, that sheet now imports right.
+        assert.deepEqual(rows(parse("Date,Courts\n3/6/2027 9am,4\n3/7/2027 1pm,2\n")), [["2027-03-06", "09:00", 4], ["2027-03-07", "13:00", 2]]);
+        // The same rule for spreadsheet numbers and text numbers; a time heading still makes them times.
+        assert.equal(guessMapping([["Date", "Courts"], ["3/6/2027", 4], ["3/7/2027", 2]], ctx).time, null);
+        assert.deepEqual(rows(parse("Date,Hour,Courts\n3/6/2027,9,4\n")), [["2027-03-06", "09:00", 4]]);
+        assert.equal(guess("Date,Courts\n3/6/2027,9:00\n").time, 1, "a real time (with a colon) is still a time");
+    });
 
     test("dates-down grid (times across the top), with an empty corner cell", () => {
         const m = guess("\t9:00\t10:30\t12:00\nSat 3/6\t4\t4\t2\nSun 3/7\t\t3\tclosed\n");
@@ -303,9 +304,13 @@ describe("parseWith", () => {
 
     test("names mode: distinct names per time, first spelling kept, closed rows give 0, names travel as units", () => {
         const r = parse("Date,Time,Field\n3/6/2027,9:00,Field 3\n3/6/2027,9:00,Field 4\n3/6/2027,9:00,field 3\n3/6/2027,11:00,Tournament\n3/6/2027,13:00,\n");
-        // The blank-court row is reported; it never adds capacity (0 at 13:00).
-        assert.deepEqual(r.rows.map((x) => [x.time, x.courts, x.units ?? null]), [["09:00", 2, ["Field 3", "Field 4"]], ["11:00", 0, null], ["13:00", 0, null]]);
+        // The blank-court row is reported and adds nothing -- not even a
+        // "closed" 0 at 13:00, which only a closed word (11:00) means.
+        assert.deepEqual(r.rows.map((x) => [x.time, x.courts, x.units ?? null]), [["09:00", 2, ["Field 3", "Field 4"]], ["11:00", 0, null]]);
         assert.deepEqual(r.problems, [{ line: 6, message: "No court named" }]);
+        // A blank cell beside named courts at the same time doesn't change their count.
+        const mixed = parse("Date,Time,Field\n3/6/2027,9:00,Field 3\n3/6/2027,9:00,\n3/6/2027,9:00,Field 4\n");
+        assert.deepEqual(mixed.rows.map((x) => [x.courts, x.units]), [[2, ["Field 3", "Field 4"]]]);
     });
 
     test("names mode with no courts column: each row is one court, no unit names", () => {

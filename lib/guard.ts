@@ -24,8 +24,11 @@ export function isGuardFailure(g: Guarded): g is { response: NextResponse } {
 
 /** Reads a JSON body with a size cap. Returns a ready response on failure. */
 export async function readJson(req: Request): Promise<{ body: unknown } | { response: NextResponse }> {
-    const text = await req.text();
-    if (text.length > MAX_BODY_BYTES) {
+    // Measured in bytes, as the name says. `text.length` counted UTF-16 code
+    // units, so a body of accented or non-Latin text could be twice the cap.
+    const bytes = new Uint8Array(await req.arrayBuffer());
+    const text = new TextDecoder().decode(bytes);
+    if (bytes.byteLength > MAX_BODY_BYTES) {
         return { response: NextResponse.json({ error: "This league is too large to save." }, { status: 413 }) };
     }
     try {

@@ -306,13 +306,11 @@ describe("no count/noun mismatches", () => {
         for (const l of battery()) for (const c of checks(l)) assert.doesNotMatch(c.text, BAD, c.text);
     });
 
-    test(
-        "a one-team league doesn't say '0 of 1 teams have requests'",
-        { todo: "BUG: readiness() writes \"0 of 1 teams have requests\" for a one-team league (lib/engine/readiness.ts:307, the noun is always plural)" },
-        () => {
-            for (const c of checks(ready({ teams: [team("a")] }))) assert.doesNotMatch(c.text, BAD, c.text);
-        }
-    );
+    test("a one-team league says '0 of 1 team has requests'", () => {
+        const texts = checks(ready({ teams: [team("a")] })).map((c) => c.text);
+        for (const t of texts) assert.doesNotMatch(t, BAD, t);
+        assert.ok(texts.includes("0 of 1 team has requests. Add any you’ve been sent; you can always add more later."));
+    });
 });
 
 describe("firstOpenStep / stepTitle", () => {

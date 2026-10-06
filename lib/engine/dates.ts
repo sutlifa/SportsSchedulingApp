@@ -16,8 +16,13 @@ export const DAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
 export const DAY_PLURAL = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"] as const;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/**
+ * A real calendar date written YYYY-MM-DD. Checked by round trip, not by
+ * Date.parse: Date.parse("2027-02-30") is a number (it rolls over to Mar 2),
+ * so an impossible date used to pass and quietly became a different day.
+ */
 export function isIsoDate(s: unknown): s is string {
-    return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s + "T00:00:00Z"));
+    return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && dayToIso(isoToDay(s)) === s;
 }
 
 export function isoToDay(iso: string): number {
@@ -106,7 +111,9 @@ export function rangesToDays(ranges: DateRange[]): Set<number> {
 export function parseTimes(text: string): string[] {
     const out: string[] = [];
     // "9", "9:30", "9.30", "0930" / "1330" (military), each with optional am/pm.
-    const re = /(\d{1,4})(?:[:.](\d{2}))?\s*(am|pm|a|p)?(?![\d])/gi;
+    // Whole numbers only: without the lookbehind, "12345" matched its last
+    // four digits and came back as 23:45.
+    const re = /(?<!\d)(\d{1,4})(?:[:.](\d{2}))?\s*(am|pm|a|p)?(?![\d])/gi;
     for (const m of text.matchAll(re)) {
         let h: number;
         let min: number;

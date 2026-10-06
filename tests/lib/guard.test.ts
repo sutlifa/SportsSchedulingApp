@@ -76,16 +76,18 @@ describe("readJson", () => {
         assert.equal(MAX_BODY_BYTES, 3_000_000);
     });
 
-    test(
-        "the cap counts BYTES, as its name says (multi-byte text can't slip past it)",
-        { todo: "BUG: readJson compares text.length -- UTF-16 code units, not bytes (lib/guard.ts:28); 1.6M 'é' is 3.2 MB of UTF-8 but passes a 3,000,000 'byte' cap. Low impact: hosts cap bodies anyway" },
-        async () => {
-            const body = JSON.stringify({ x: "é".repeat(1_600_000) });
-            assert.ok(Buffer.byteLength(body) > MAX_BODY_BYTES);
-            const r = await readJson(req(body));
-            assert.ok("response" in r && r.response.status === 413);
-        }
-    );
+    test("the cap counts UTF-8 BYTES, as its name says (multi-byte text can't slip past it)", async () => {
+        const over = JSON.stringify({ x: "é".repeat(1_600_000) });
+        assert.ok(over.length < MAX_BODY_BYTES && Buffer.byteLength(over) > MAX_BODY_BYTES);
+        const r = await readJson(req(over));
+        assert.ok("response" in r && r.response.status === 413);
+        // Exactly at the cap in bytes (2-byte "é" padding) is still read, and decoded right.
+        const base = JSON.stringify({ x: "" }).length;
+        const at = JSON.stringify({ x: "é".repeat((MAX_BODY_BYTES - base) / 2) });
+        assert.equal(Buffer.byteLength(at), MAX_BODY_BYTES);
+        const ok = await readJson(req(at));
+        assert.ok("body" in ok && (ok.body as { x: string }).x.startsWith("éé"));
+    });
 });
 
 describe("cleanName", () => {

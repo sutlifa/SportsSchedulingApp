@@ -48,6 +48,7 @@ function catalogue(sport: (typeof SPORT_IDS)[number]): [string, AdviceTab][] {
         [`The facility’s spreadsheet has no ${t.time} then`, "courts"],
         ["This time is no longer in the weekly slots or the facility’s availability", "courts"],
         ["There are no time slots in the season to put it in.", "courts"],
+        ["One of these teams has been deleted", "teams"],
         [`${team}: not at the same time as ${other}`, "teams"],
         [`${team}: not on the same day as ${other}`, "teams"],
         ...ruleMsgs,
@@ -86,13 +87,17 @@ describe("adviceFor", () => {
         });
     }
 
-    test(
-        "audit's 'One of these teams has been deleted' has specific advice",
-        { todo: "BUG: no adviceFor case matches it (lib/engine/advice.ts:33-77), so it gets the generic 'Try moving the match by hand' with no tab, although audit() produces it (lib/engine/engine.ts:1052)" },
-        () => {
-            assert.notEqual(adviceFor("One of these teams has been deleted", sampleLeague()).tab, null);
-        }
-    );
+    test("audit's 'One of these teams has been deleted' has specific advice, in the sport's words", () => {
+        assert.deepEqual(adviceFor("One of these teams has been deleted", sampleLeague()), { tip: "A team in this match no longer exists. Regenerate to drop the match, or add the team back.", tab: "teams", tabLabel: "Teams" });
+        assert.equal(adviceFor("One of these teams has been deleted", sampleLeague("hockey")).tip, "A team in this game no longer exists. Regenerate to drop the game, or add the team back.");
+    });
+
+    test("every message a real audit gives for a deleted team or location has advice", () => {
+        const l = sampleLeague("soccer");
+        const ms = run(l, [], { maxAttempts: 1 }).matches;
+        const broken = [{ ...ms[0], home: "deleted-team" }, { ...ms[1], locationId: "gone", slotId: "gone" }, ...ms.slice(2)];
+        for (const reason of [...audit(l, broken).issues.values()].flatMap((v) => [...v.hard, ...v.soft])) assert.ok(TABS.includes(adviceFor(reason, l).tab!), reason);
+    });
 
     test("the 'booked' variants of a missing unit get a different fix from the plain one", () => {
         const l = sampleLeague("soccer");

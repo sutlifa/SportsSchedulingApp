@@ -124,21 +124,6 @@ function gen(l: League, seed: number, prev: Match[] = []) {
     return generate(l, prev, { scope: "all", seed, maxAttempts: 3, timeBudgetMs: 1e9, now: () => 0 });
 }
 
-/**
- * The known not_same_day bug (see engine-generate.test.ts): "X: not on the same
- * day as Y" on a game of X's, where X and Y ALSO play each other that day.
- */
-let knownBugHits = 0;
-function isKnownSameDayBug(l: League, ms: Match[], m: Match, text: string): boolean {
-    const hit = /^(.+): not on the same day as (.+)$/.exec(text);
-    if (!hit) return false;
-    const id = (name: string) => l.teams.find((t) => t.name === name)?.id;
-    const [x, y] = [id(hit[1]), id(hit[2])];
-    const together = ms.some((g) => g.date === m.date && ((g.home === x && g.away === y) || (g.home === y && g.away === x)));
-    if (together) knownBugHits++;
-    return together;
-}
-
 /** Every promise of a generated schedule, checked without the engine's check(). */
 function checkPromises(l: League, ms: Match[], label: string) {
     const teams = new Map(l.teams.map((t) => [t.id, t]));
@@ -183,11 +168,8 @@ function checkPromises(l: League, ms: Match[], label: string) {
             const k = `${id}|${m.date}`;
             perTeamDay.set(k, [...(perTeamDay.get(k) ?? []), m]);
         }
-        // No must-rule broken (the engine's own audit agrees) -- apart from the
-        // one known bug, tolerated ONLY in its exact shape so it can't mask
-        // anything else; it is counted and asserted by its own todo test.
-        const hard = (a.issues.get(m.id)?.hard ?? []).filter((h) => !isKnownSameDayBug(l, ms, m, h));
-        assert.deepEqual(hard, [], `${label}: ${m.id} breaks a must-rule`);
+        // No must-rule broken (the engine's own audit agrees), with no exceptions.
+        assert.deepEqual(a.issues.get(m.id)?.hard ?? [], [], `${label}: ${m.id} breaks a must-rule`);
     }
     for (const [idx, n] of perInstance) assert.ok(n <= ctx.instances[idx].capacity, `${label}: over capacity`);
     for (const [k, list] of perTeamDay) {
@@ -249,16 +231,6 @@ describe("fuzz: random leagues keep every promise", () => {
             checkPromises(l, r.matches, `relock seed ${seed}`);
         }
     });
-
-    // Reads the count the two tests above collected (tests in a file run in
-    // order), rather than generating 300 leagues a second time.
-    test(
-        "no schedule hits the known not_same_day bug",
-        { todo: "BUG: see engine-generate.test.ts 'not_same_day holds when the two teams also play EACH OTHER that day' (lib/engine/engine.ts:537)" },
-        () => {
-            assert.equal(knownBugHits, 0);
-        }
-    );
 
     test("same seed, same schedule", () => {
         for (let seed = 1; seed <= 25; seed++) assert.deepEqual(gen(randomLeague(seed), 7), gen(randomLeague(seed), 7));

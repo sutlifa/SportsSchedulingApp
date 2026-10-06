@@ -1,23 +1,15 @@
 import NextAuth, { type Session } from "next-auth";
 import Google from "next-auth/providers/google";
 import { upsertUser } from "./lib/users";
+import { cleanEnv } from "./lib/authConfig";
 
 /**
  * Google sign-in, JWT sessions, no Auth.js database adapter. Anyone with a
  * Google account can sign in and gets their own private leagues; during
  * testing, Google's consent-screen test-user list decides who that is.
  */
-/**
- * Env values pasted into a dashboard often pick up a trailing space, a line
- * break or surrounding quotes. Google then rejects the client id as unknown
- * ("Error 401: invalid_client -- The OAuth client was not found"), which
- * looks like a wrong id when the id is actually right. Strip all of that
- * before handing the values to the provider.
- */
-function cleanEnv(v: string | undefined): string | undefined {
-    const t = v?.trim().replace(/^["']|["']$/g, "").trim();
-    return t || undefined;
-}
+// Env values are cleaned (spaces, line breaks, quotes) by cleanEnv, shared
+// with lib/authConfig.ts so "is sign-in configured?" and the provider agree.
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     providers: [

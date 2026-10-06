@@ -326,6 +326,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             [`Misses preference: ${u(2)} isn’t listed as free at that time`, `The ${t.unit} was taken out of that slot or that date’s uploaded availability.`, `Move the ${t.match} to a free ${t.unit}, or regenerate.`],
                             [`Breaks: The facility’s spreadsheet has no ${t.time} then`, "A newer facility spreadsheet doesn’t include this time (or marks it closed).", `Move the ${t.match}, or upload a corrected file.`],
                             ["Breaks: Its location was deleted", "The facility was removed.", `Move the ${t.match} or regenerate.`],
+                            ["Breaks: One of these teams has been deleted", "The team no longer exists (usually in a restored backup or an old saved schedule).", `Regenerate to drop the ${t.match}, or add the team back (Teams).`],
                             ["Misses preference: This time is no longer in the weekly slots…", "Its weekly slot was changed or removed.", "Move it to a current time."],
                         ]}
                     />
@@ -334,6 +335,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                     <ErrTable
                         rows={[
                             ["This doesn’t look like an Excel (.xlsx) file.", "The file isn’t a real .xlsx (renamed, or another format).", "Open it in Excel or Google Sheets and save/download as .xlsx or .csv."],
+                            ["That file isn’t a readable .xlsx spreadsheet.", "The file is damaged (often a download cut short) or wasn’t saved by a spreadsheet app.", "Save it again from Excel or Google Sheets, or upload a .csv."],
                             ["That’s the old .xls format.", "Excel 97–2003 files can’t be read.", "File → Save As → Excel Workbook (.xlsx) or CSV."],
                             ["Nothing could be read with these settings.", "The layout or columns were guessed wrong.", "Change Layout, Heading row and the column choices; the preview updates."],
                             ["Row 12: Couldn’t read the date “…”", "That cell isn’t a date (often a note or a typo).", "Usually ignore it, or fix the cell and upload again."],

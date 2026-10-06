@@ -111,13 +111,10 @@ describe("isIsoDate / isTime / toMinutes", () => {
             assert.equal(isIsoDate(bad), false, String(bad));
     });
 
-    test(
-        "isIsoDate rejects impossible calendar days (Feb 30, Apr 31, Feb 29 in a common year)",
-        { todo: "BUG: isIsoDate('2027-02-30') is true -- Date.parse rolls it to Mar 2, so sanitize keeps an impossible date (lib/engine/dates.ts:19)" },
-        () => {
-            for (const bad of ["2027-02-30", "2027-04-31", "2027-02-29", "2100-02-29"]) assert.equal(isIsoDate(bad), false, bad);
-        }
-    );
+    test("isIsoDate rejects impossible calendar days (Feb 30, Apr 31, Feb 29 in a common year)", () => {
+        for (const bad of ["2027-02-30", "2027-04-31", "2027-02-29", "2100-02-29", "2027-06-31", "2027-01-32", "2027-01-00"]) assert.equal(isIsoDate(bad), false, bad);
+        for (const ok of ["2028-02-29", "2000-02-29", "2027-04-30", "2027-12-31", "2027-01-01"]) assert.equal(isIsoDate(ok), true, ok);
+    });
 
     test("isTime is strict 24h HH:MM", () => {
         for (const ok of ["00:00", "09:05", "12:00", "23:59"]) assert.equal(isTime(ok), true, ok);
@@ -241,13 +238,11 @@ describe("parseTimes", () => {
         assert.deepEqual(parseTimes("noon"), [], "a word it doesn't know must not invent a time");
     });
 
-    test(
-        "a five-digit number is not a time",
-        { todo: "BUG: parseTimes('12345') returns ['23:45'] -- the regex re-matches the last four digits (lib/engine/dates.ts:109)" },
-        () => {
-            assert.deepEqual(parseTimes("12345"), []);
-        }
-    );
+    test("a five-digit (or longer) number is not a time", () => {
+        assert.deepEqual(parseTimes("12345"), []);
+        assert.deepEqual(parseTimes("123456789"), []);
+        assert.deepEqual(parseTimes("12345, 9am"), ["09:00"], "the rest of the list still reads");
+    });
 
     test("every result is a valid HH:MM", () => {
         for (const [input] of cases) for (const t of parseTimes(input)) assert.ok(isTime(t), `${input} -> ${t}`);

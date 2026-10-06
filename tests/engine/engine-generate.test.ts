@@ -251,21 +251,47 @@ describe("generate: must rules are never broken (one minimal league per rule typ
         }
     });
 
-    test(
-        "not_same_day holds when the two teams also play EACH OTHER that day (generate agrees with audit)",
-        {
-            todo: "BUG: check() skips a not_same_day partner who is in the game being placed (lib/engine/engine.ts:537), so placing A v C after A v D on the same day passes, yet audit() of the result flags A v D as a hard break: generate's output breaks a must-rule by its own audit. Repro: this test (3 teams, maxPerDay 2, one Saturday, A must not play the same day as C).",
-        },
-        () => {
-            const l = league({
-                settings: { seasonStart: "2027-03-06", seasonEnd: "2027-03-06", maxPerDay: 2 },
-                brackets: [bracket("b", { matches: 2 })],
-                slots: [slot("s9", 6, "09:00"), slot("s11", 6, "11:00"), slot("s13", 6, "13:00")],
-                teams: [team("a", { rules: [rule("not_same_day", { teamIds: ["c"] })] }), team("c"), team("d")],
-            });
-            for (const seed of [1, 2, 3]) noHardIssues(l, run(l, [], { seed }).matches);
+    // Placement order used to decide this: A v D placed before A v C on the
+    // same Saturday passed check(), and audit() then flagged A v D as broken.
+    const linked = (kind: "not_same_day" | "not_same_time", times: string[], cap = 1) =>
+        league({
+            settings: { seasonStart: "2027-03-06", seasonEnd: "2027-03-06", maxPerDay: 2 },
+            brackets: [bracket("b", { matches: 2 })],
+            slots: times.map((t, i) => slot(`s${i}`, 6, t, { capacity: cap })),
+            teams: [team("a", { rules: [rule(kind, { teamIds: ["c"] })] }), team("c"), team("d")],
+        });
+
+    test("not_same_day holds when the two teams also play EACH OTHER that day, whatever the placement order", () => {
+        const l = linked("not_same_day", ["09:00", "11:00", "13:00"]);
+        const isAC = (m: Match) => [m.home, m.away].sort().join() === "a,c";
+        let jointDays = 0;
+        for (let seed = 1; seed <= 30; seed++) {
+            const r = run(l, [], { seed });
+            noHardIssues(l, r.matches);
+            // A v C may be played; but then neither A nor C plays anyone else that day
+            // (there is only one day, so every placed game must be A v C).
+            if (placed(r.matches).some(isAC)) {
+                jointDays++;
+                assert.ok(placed(r.matches).every(isAC), `seed ${seed}`);
+            }
         }
-    );
+        assert.ok(jointDays > 0, "some seeds do play A v C");
+    });
+
+    test("not_same_day: locking A v D first, then generating, never adds A v C (or C's games) that day", () => {
+        const l = linked("not_same_day", ["09:00", "11:00", "13:00"]);
+        const locked = [{ id: "k", home: "a", away: "d", bracketId: "b", pool: "", date: "2027-03-06", time: "09:00", locationId: "l", slotId: "s0", locked: true }];
+        for (let seed = 1; seed <= 10; seed++) {
+            const r = run(l, locked, { seed });
+            noHardIssues(l, r.matches);
+            assert.ok(placed(r.matches).every((m) => m.home !== "c" && m.away !== "c"), "C can't play on A's day");
+        }
+    });
+
+    test("not_same_time is order-independent too (a joint game can't overlap either team's other game)", () => {
+        const l = linked("not_same_time", ["09:00", "09:30", "13:00"], 2);
+        for (let seed = 1; seed <= 30; seed++) noHardIssues(l, run(l, [], { seed }).matches);
+    });
 
     test("bracket window and days, and slots' 'Open to'", () => {
         const l = league({
@@ -470,14 +496,14 @@ describe("generate: warnings and explanations", () => {
         assert.match(w[0], /^[ACD] gets 2 of 3 matches: B has an odd total, so one team must come up one short \(or add a team\)\.$/);
     });
 
-    test(
-        "shortfall warnings agree in number ('of 1 match', not 'of 1 matches')",
-        { todo: "BUG: generate() writes \"A gets 0 of 1 matches\" -- the noun is always plural (lib/engine/engine.ts:824, `${tc.target} ${ctx.terms.matches}`)" },
-        () => {
-            const l = league({ brackets: [bracket("b", { matches: 1 })], slots: everyDay("10:00", 3), teams: [team("a"), team("c"), team("d")] });
-            for (const w of run(l).warnings) assert.doesNotMatch(w, /\b1 matches\b/, w);
-        }
-    );
+    test("shortfall warnings agree in number ('of 1 match', not 'of 1 matches')", () => {
+        const l = league({ brackets: [bracket("b", { matches: 1 })], slots: everyDay("10:00", 3), teams: [team("a"), team("c"), team("d")] });
+        const w = run(l).warnings;
+        assert.equal(w.length, 1);
+        assert.match(w[0], /^[ACD] gets 0 of 1 match: B has an odd total/);
+        const hockey = league({ settings: { sport: "hockey" }, brackets: [bracket("b", { matches: 1 })], slots: everyDay("10:00", 3), teams: [team("a", { matches: 3 }), team("c"), team("d")] });
+        assert.deepEqual(run(hockey).warnings, ["A gets 2 of 3 games: the rest of B has only 2 to give (add a team, or give it fewer)."]);
+    });
 
     test("no time in the season: a warning, and every game says why", () => {
         const r = run(league({ teams: [team("a"), team("c")] }));

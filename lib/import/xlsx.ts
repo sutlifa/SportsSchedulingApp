@@ -125,7 +125,26 @@ function parseRef(ref: string): { r: number; c: number } | null {
     return m ? { r: Number(m[2]) - 1, c: colIndex(m[1]) } : null;
 }
 
+/** What the person sees for any failure we didn't anticipate by name. */
+export const UNREADABLE_XLSX = "That file isn’t a readable .xlsx spreadsheet. Save it again from Excel or Google Sheets, or upload a .csv.";
+
+/**
+ * Reads every worksheet. Fails ONLY with an XlsxError whose message is a
+ * plain sentence for the import dialog (which shows `err.message` as is):
+ * a damaged file used to surface the platform's own error -- an empty
+ * TypeError from DecompressionStream (a blank message) or a RangeError
+ * ("Offset is outside the bounds of the DataView").
+ */
 export async function readXlsx(data: ArrayBuffer | Uint8Array): Promise<Sheet[]> {
+    try {
+        return await readWorkbook(data);
+    } catch (e) {
+        if (e instanceof XlsxError) throw e;
+        throw new XlsxError(UNREADABLE_XLSX);
+    }
+}
+
+async function readWorkbook(data: ArrayBuffer | Uint8Array): Promise<Sheet[]> {
     const buf = data instanceof Uint8Array ? data : new Uint8Array(data);
     const zip = readZip(buf);
     const text = async (name: string) => {

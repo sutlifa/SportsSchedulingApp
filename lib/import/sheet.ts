@@ -374,8 +374,11 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     };
     const date = pick(KEYWORDS.date, (c) => looksLikeDate(c, ctx), 0.5);
     // A bare number only counts as a time when its column is headed like one
-    // ("Start": 9, 13); otherwise 4 is a court count, not 4pm.
-    const time = pick(KEYWORDS.time, (c, col) => !looksLikeDate(c, ctx) && readTime(c) !== null && (typeof c !== "number" || c < 1 || KEYWORDS.time.test(headText(col))), 0.5);
+    // ("Start": 9, 13); otherwise 4 is a court count, not 4pm. That holds for
+    // a CSV's text "4" exactly as for a spreadsheet's number 4 -- testing only
+    // number cells let "Date,Courts / 3/6/2027,4" import 1 court at 4 PM.
+    const bareNumber = (c: Cell) => (typeof c === "number" && c >= 1) || (typeof c === "string" && /^\s*\d+\s*$/.test(c));
+    const time = pick(KEYWORDS.time, (c, col) => !looksLikeDate(c, ctx) && readTime(c) !== null && (!bareNumber(c) || KEYWORDS.time.test(headText(col))), 0.5);
     // A playing-area column holds counts ("4") or names ("Sheet A", "Field 3").
     const courts = pick(KEYWORDS.courts, (c) => (typeof c === "string" && SINGLE_COURT.test(c.trim())) || (readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx))), 0.6);
     let location: number | null = null;
@@ -471,14 +474,20 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
             if (m.courtsMode === "names") {
                 // One row per court: collect distinct court names per time.
                 const k = keyOf({ date: d.date, time, location: loc });
+                const c = m.courts === null ? null : row[m.courts];
+                // A blank court cell is reported and adds NOTHING -- like a
+                // blank count in counts mode. Creating the time first made it a
+                // 0-court row, i.e. "closed", from a cell that said nothing.
+                if (m.courts !== null && isBlank(c)) {
+                    problem(line, "No court named");
+                    continue;
+                }
                 const entry = named.get(k) ?? { row: { date: d.date, time, courts: 0, location: loc, line }, names: new Map<string, string>() };
                 named.set(k, entry);
                 if (m.courts === null) entry.names.set(`row ${line}`, "");
                 else {
-                    const c = row[m.courts];
-                    if (isBlank(c)) problem(line, "No court named");
                     // Only a whole-cell "closed" marker is skipped; "Clinic Court" is a court.
-                    else if (!(typeof c === "string" && (CLOSED_CELL.test(c.trim()) || /^(-|–|—|x|closed|none|n\/?a)$/i.test(c.trim())))) {
+                    if (!(typeof c === "string" && (CLOSED_CELL.test(c.trim()) || /^(-|–|—|x|closed|none|n\/?a)$/i.test(c.trim())))) {
                         // First spelling wins ("Field 3" over a later "field 3").
                         const key = cellText(c).toLowerCase();
                         if (!entry.names.has(key)) entry.names.set(key, cellText(c));

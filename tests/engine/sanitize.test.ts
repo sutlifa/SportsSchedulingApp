@@ -15,13 +15,9 @@ describe("sanitizeRule", () => {
             assert.equal(sanitizeRule(v), null, JSON.stringify(v));
     });
 
-    test(
-        "rejects rule types that are Object.prototype keys (constructor, toString, __proto__)",
-        { todo: "BUG: `type in RULE_DEFS` (lib/engine/sanitize.ts:52) is true for prototype keys, the switch has no case, and sanitizeRule returns undefined, which the `!== null` filter at :82 keeps" },
-        () => {
-            for (const type of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"]) assert.equal(sanitizeRule({ type }), null, type);
-        }
-    );
+    test("rejects rule types that are Object.prototype keys (constructor, toString, __proto__)", () => {
+        for (const type of ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf", "isPrototypeOf"]) assert.equal(sanitizeRule({ type }), null, type);
+    });
 
     test("mode: only 'prefer' is prefer; anything else is must", () => {
         assert.equal(sanitizeRule({ type: "max_per_week", mode: "prefer" })!.mode, "prefer");
@@ -174,14 +170,52 @@ describe("sanitizeLeague: garbage and missing fields", () => {
         assert.equal(l.notes, "");
     });
 
-    test(
-        "units: duplicate ids inside one facility are not kept (they would count as two units of capacity)",
-        { todo: "BUG: sanitizeLeague keeps two units with the same id (lib/engine/sanitize.ts:132-136 de-dups by name only); prepare() then counts both, giving 2 games at once on 1 real unit, and the 2nd game gets no unit" },
-        () => {
-            const l = sanitizeLeague({ locations: [{ id: "l", units: [{ id: "u1", name: "Court A" }, { id: "u1", name: "Court B" }] }] });
-            assert.equal(new Set(l.locations[0].units.map((u) => u.id)).size, l.locations[0].units.length);
+    test("units: a duplicate id inside one facility is re-issued, so it can't count as two units of capacity", () => {
+        const raw = { locations: [{ id: "l", units: [{ id: "u1", name: "Court A" }, { id: "u1", name: "Court B" }] }], slots: [{ id: "s", day: 6, time: "09:00", locationId: "l", unitIds: ["u1"] }] };
+        const l = sanitizeLeague(raw);
+        const [a, b] = l.locations[0].units;
+        assert.deepEqual([a.id, a.name, b.name], ["u1", "Court A", "Court B"], "the first keeps its id");
+        assert.notEqual(b.id, "u1");
+        assert.match(b.id, ID);
+        // The slot that named "u1" still means Court A, and holds ONE game, not two.
+        const ctx = prepare({ ...l, settings: { ...l.settings, seasonStart: "2027-03-06", seasonEnd: "2027-03-06" } });
+        assert.deepEqual(ctx.instances.map((i) => [i.capacity, i.unitIds]), [[1, ["u1"]]]);
+        assert.deepEqual(sanitizeLeague(l), l, "idempotent");
+    });
+
+    test("duplicate team, bracket and location ids: the first keeps the id, later ones are re-issued (nothing dropped)", () => {
+        const l = sanitizeLeague({
+            brackets: [{ id: "b", name: "10U" }, { id: "b", name: "12U" }],
+            locations: [{ id: "l", name: "Hall" }, { id: "l", name: "Park" }],
+            teams: [{ id: "t", name: "Hawks", bracketId: "b" }, { id: "t", name: "Storm", bracketId: "b" }, { id: "u", name: "Wolves" }],
+        });
+        for (const list of [l.brackets, l.locations, l.teams] as { id: string; name: string }[][]) {
+            assert.equal(new Set(list.map((x) => x.id)).size, list.length);
+            assert.match(list[1].id, ID);
         }
-    );
+        assert.deepEqual([l.brackets[0].id, l.locations[0].id, l.teams[0].id, l.teams[2].id], ["b", "l", "t", "u"]);
+        assert.deepEqual(l.teams.map((t) => t.name), ["Hawks", "Storm", "Wolves"]);
+        assert.deepEqual(l.teams.map((t) => t.bracketId), ["b", "b", ""], "references are untouched: they mean the first holder");
+        assert.deepEqual(sanitizeLeague(l), l);
+    });
+
+    test("weekly slots and uploaded rows share one id space (both become an instance's slotId)", () => {
+        const l = sanitizeLeague({
+            slots: [{ id: "s", day: 6, time: "09:00", locationId: "l" }, { id: "x", day: 6, time: "bad" }, { id: "s", day: 0, time: "10:00", locationId: "l" }],
+            availability: [{ id: "s", date: "2027-03-06", time: "11:00", locationId: "l", courts: 2 }, { id: "x", date: "2027-03-06", time: "12:00", locationId: "l", courts: 2 }],
+        });
+        const ids = [...l.slots, ...l.availability].map((x) => x.id);
+        assert.equal(new Set(ids).size, 4);
+        assert.equal(ids[0], "s");
+        assert.equal(ids[3], "x", "a dropped slot doesn't claim its id");
+        assert.deepEqual(sanitizeLeague(l), l);
+    });
+
+    test("rule ids are unique within each rule list", () => {
+        const [t] = sanitizeLeague({ teams: [{ rules: [{ id: "r", type: "note" }, { id: "r", type: "max_per_week" }] }] }).teams;
+        assert.equal(t.rules[0].id, "r");
+        assert.notEqual(t.rules[1].id, "r");
+    });
 
     test("slots: bad times dropped, bad days default to Saturday, capacity clamped, id lists cleaned", () => {
         const l = sanitizeLeague({
@@ -291,17 +325,15 @@ describe("sanitizeLeague: old shapes", () => {
         assert.ok(ctx.instances.every((i) => i.unitIds.length === 0 && (i.capacity === 3 || i.capacity === 2)));
     });
 
-    test(
-        "a team rule whose type is a prototype key (e.g. from a hand-edited backup) can't crash the engine",
-        { todo: "BUG: sanitizeLeague keeps `undefined` in team.rules for {type:'constructor'} (lib/engine/sanitize.ts:52,82); audit/readiness/generate then throw \"Cannot read properties of undefined (reading 'type')\"" },
-        () => {
-            const raw = JSON.parse(JSON.stringify(sampleLeague())) as { teams: { rules: unknown[] }[] };
-            raw.teams[0].rules.push({ id: "evil", mode: "must", type: "constructor" });
-            const l = sanitizeLeague(raw);
-            assert.ok(l.teams[0].rules.every((r) => r && typeof r.type === "string"));
-            assert.doesNotThrow(() => prepare(l));
-        }
-    );
+    test("a team rule whose type is a prototype key (e.g. from a hand-edited backup) is dropped and can't crash the engine", () => {
+        const raw = JSON.parse(JSON.stringify(sampleLeague())) as { teams: { rules: unknown[] }[]; brackets: { rules: unknown[] }[] };
+        raw.teams[0].rules.push({ id: "evil", mode: "must", type: "constructor" }, { type: "__proto__" }, "toString", null);
+        raw.brackets[0].rules.push({ type: "toString" });
+        const l = sanitizeLeague(raw);
+        assert.equal(l.teams[0].rules.length, 1, "only the real rule is kept");
+        assert.ok([...l.teams, ...l.brackets].every((x) => x.rules.every((r) => r && typeof r.type === "string")));
+        assert.doesNotThrow(() => prepare(l));
+    });
 
     test("an unknown sport reads as tennis", () => {
         assert.equal(sanitizeLeague({ settings: { sport: "curling" } }).settings.sport, "tennis");
@@ -330,6 +362,19 @@ describe("sanitizeSchedule", () => {
                 ["m3", null, null, null, null, null],
             ]
         );
+    });
+
+    test("a team can't play itself: self-matches are dropped", () => {
+        const s = sanitizeSchedule({ matches: [{ id: "a", home: "x", away: "x" }, { id: "b", home: "x", away: "y" }] });
+        assert.deepEqual(s.matches.map((m) => m.id), ["b"]);
+    });
+
+    test("duplicate match ids are re-issued (the first keeps its id), even against a positional fallback", () => {
+        const s = sanitizeSchedule({ matches: [{ id: "m1", home: "a", away: "b" }, { id: "m1", home: "c", away: "d" }, { id: "bad id", home: "e", away: "f" }, { id: "m2", home: "g", away: "h" }] });
+        const ids = s.matches.map((m) => m.id);
+        assert.equal(new Set(ids).size, 4);
+        assert.deepEqual([ids[0], ids[2]], ["m1", "m2"], "'bad id' at index 2 falls back to m2 and keeps it; the later real m2 is re-issued");
+        assert.deepEqual(sanitizeSchedule(s), s);
     });
 
     test("matches without both teams are dropped; bad ids get a positional id", () => {

@@ -60,6 +60,10 @@ export function adviceFor(reason: string, league: League): Advice {
         return make(`This team’s other ${t.matches} already use the open days. Add more dates or time slots, or raise “Max ${t.matches} per team per day”.`, "season");
     if (/^More than \d+ .+ at the same time$/.test(reason))
         return make("The club limit keeps one club’s teams apart. Raise it, set it to “where possible”, or add time slots at other times.", "season");
+    // Deleting a team in the editor removes its games, so this shows up from a
+    // restored backup or an old saved schedule. Generate drops such games.
+    if (/^One of these teams has been deleted$/.test(reason))
+        return make(`A team in this ${t.match} no longer exists. Regenerate to drop the ${t.match}, or add the team back.`, "teams");
     if (/^Its location was deleted$/.test(reason)) return make(`Move the ${t.match} to another time, or regenerate to place it again.`, "courts");
     if (/^The facility’s spreadsheet has no .+ then$/.test(reason))
         return make(`The facility’s uploaded spreadsheet doesn’t include this time. Move the ${t.match}, or upload an updated file.`, "courts");

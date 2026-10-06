@@ -155,24 +155,43 @@ describe("readXlsx: damaged and wrong files fail with a clear message", () => {
         await refuses(workbook({ sheets: [] }), /no readable worksheets/);
     });
 
-    test(
-        "damaged compressed data",
-        { todo: "BUG: a corrupt deflate stream rejects with a TypeError whose message is \"\" (lib/import/xlsx.ts:32-35 doesn't wrap DecompressionStream errors); ImportDialog shows err.message, i.e. a blank error" },
-        async () => {
-            await refuses(zip([{ name: "xl/workbook.xml", data: new Uint8Array([0xff, 0xfe, 0x00, 0x12, 0x99, 0x01, 0x02]), method: 8, asIs: true }]), /damaged|Excel/);
-        }
-    );
+    const unreadable = /^That file isn’t a readable \.xlsx spreadsheet\. Save it again from Excel or Google Sheets, or upload a \.csv\.$/;
 
-    test(
-        "an entry offset past the end of the file",
-        { todo: "BUG: a central-directory offset beyond the buffer throws RangeError \"Offset is outside the bounds of the DataView\" (lib/import/xlsx.ts:63-64), which ImportDialog shows verbatim" },
-        async () => {
-            const z = zip([{ name: "xl/workbook.xml", data: "<workbook/>" }]);
-            const dv = new DataView(z.buffer);
-            dv.setUint32(dv.getUint32(z.length - 22 + 16, true) + 42, 999_999, true);
-            await refuses(z, /damaged/);
+    test("damaged compressed data: one plain message, never a blank one", async () => {
+        await refuses(zip([{ name: "xl/workbook.xml", data: new Uint8Array([0xff, 0xfe, 0x00, 0x12, 0x99, 0x01, 0x02]), method: 8, asIs: true }]), unreadable);
+        // A damaged worksheet (not just the workbook part) too.
+        const good = workbook({ sheets: [{ name: "S", xml: sheetXml([{ cells: [num("A1", 1)] }]) }] });
+        const real = zip([
+            { name: "xl/workbook.xml", data: '<workbook><sheets><sheet name="S" r:id="rId1"/></sheets></workbook>' },
+            { name: "xl/_rels/workbook.xml.rels", data: '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>' },
+            { name: "xl/worksheets/sheet1.xml", data: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]), method: 8, asIs: true },
+        ]);
+        await refuses(real, unreadable);
+        assert.equal((await readXlsx(good))[0].rows[0][0], 1, "the healthy version reads");
+    });
+
+    test("an entry offset past the end of the file: the same plain message", async () => {
+        const z = zip([{ name: "xl/workbook.xml", data: "<workbook/>" }]);
+        const dv = new DataView(z.buffer);
+        dv.setUint32(dv.getUint32(z.length - 22 + 16, true) + 42, 999_999, true);
+        await refuses(z, unreadable);
+    });
+
+    test("randomly corrupted real workbooks only ever fail with a plain, non-empty XlsxError", async () => {
+        const real = fixture("grid-dates-down.xlsx");
+        let seed = 7;
+        const rand = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32);
+        for (let i = 0; i < 150; i++) {
+            const bad = real.slice();
+            for (let k = 0; k < 1 + Math.floor(rand() * 20); k++) bad[Math.floor(rand() * bad.length)] = Math.floor(rand() * 256);
+            try {
+                await readXlsx(bad);
+            } catch (e) {
+                assert.ok(isXlsxError(e), `#${i}: ${(e as Error)?.constructor?.name}: ${(e as Error)?.message}`);
+                assert.ok((e as Error).message.length > 20, `#${i}: message "${(e as Error).message}"`);
+            }
         }
-    );
+    });
 
     test("isXlsxError tells our errors from anything else", () => {
         assert.equal(isXlsxError(new Error("x")), false);

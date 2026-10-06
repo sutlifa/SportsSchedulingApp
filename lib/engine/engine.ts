@@ -377,7 +377,8 @@ export function prepare(league: League): Ctx {
 // State: what has been placed so far in one attempt.
 // ---------------------------------------------------------------------------
 
-type Game = { day: number; minutes: number };
+/** One of a team's placed games: when, and against whom (`vs`, for "not on the same day as"). */
+type Game = { day: number; minutes: number; vs: string };
 
 /** Where a match sits. `idx` is -1 for a kept match whose slot no longer exists. */
 export type Spot = { idx: number; day: number; minutes: number; locationId: string; time: string; date: string; slotId: string };
@@ -420,11 +421,12 @@ function bump(map: Map<string, number> | Map<number, number>, key: string | numb
 function place(ctx: Ctx, st: State, home: string, away: string, spot: Spot, by: 1 | -1) {
     if (spot.idx >= 0) st.used[spot.idx] += by;
     for (const id of [home, away]) {
+        const vs = id === home ? away : home;
         let g = st.games.get(id);
         if (!g) st.games.set(id, (g = []));
-        if (by === 1) g.push({ day: spot.day, minutes: spot.minutes });
+        if (by === 1) g.push({ day: spot.day, minutes: spot.minutes, vs });
         else {
-            const i = g.findIndex((x) => x.day === spot.day && x.minutes === spot.minutes);
+            const i = g.findIndex((x) => x.day === spot.day && x.minutes === spot.minutes && x.vs === vs);
             if (i >= 0) g.splice(i, 1);
         }
     }
@@ -523,6 +525,10 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
             }
         }
         for (const [other, mode] of tc.sameTime) {
+            // Unlike "same day", the joint case (this game IS A v C) needs no
+            // check here: any other game of A or C overlapping it would be that
+            // team playing twice at once, which the team check above already
+            // refuses -- so the result can't depend on placement order.
             if (other === home || other === away) continue;
             const og = st.games.get(other);
             if (!og?.some((g) => g.day === spot.day && Math.abs(g.minutes - spot.minutes) < ctx.matchMinutes)) continue;
@@ -534,8 +540,16 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
             }
         }
         for (const [other, mode] of tc.sameDay) {
-            if (other === home || other === away) continue;
-            if (!st.games.get(other)?.some((g) => g.day === spot.day)) continue;
+            // "A not on the same day as C" lets A and C play EACH OTHER, but on
+            // such a day neither may play anyone else -- judged the same way
+            // whichever game is placed first. So when this game IS A v C, it
+            // breaks the rule if C (or, from C's side, A) already has a game
+            // that day against someone else. Skipping that case made the result
+            // depend on placement order: A v D then A v C on one Saturday passed
+            // here, and audit() then flagged A v D as a broken must-rule.
+            const joint = other === home || other === away;
+            const og = st.games.get(other) ?? [];
+            if (!og.some((g) => g.day === spot.day && (!joint || g.vs !== tc.team.id))) continue;
             const text = `${tc.team.name}: not on the same day as ${ctx.lookup.team(other) ?? "another team"}`;
             if (mode === "prefer") soft.push(text);
             else {
@@ -645,6 +659,14 @@ export function pairPool(ids: string[], need: Map<string, number>, meets: Map<st
         left.set(b, left.get(b)! - 1);
         met.set(pairKey(a, b), meet(a, b) + 1);
     }
+    // Safety net, kept on purpose. The greedy pass above always serves the
+    // neediest team first, so in practice it never ends with a team 2+ short
+    // AND a pairing that team isn't in: 300,000 randomized pools (3-6 teams,
+    // needs 0-6, feasible and not, with and without earlier meetings) never
+    // reached the cost loop below (unit-test coverage confirms it is idle).
+    // That is evidence, not a proof, so this stays rather than being deleted;
+    // when it can't help (every pairing involves the short team) it exits via
+    // `best < 0` and the shortfall is reported as a warning instead.
     for (const short of ids) {
         while (left.get(short)! >= 2) {
             // Break the pairing whose teams the short team has met least.
@@ -821,7 +843,7 @@ export function generate(league: League, previous: Match[], opts: GenerateOption
                 const n = need.get(id) ?? 0;
                 if ((got.get(id) ?? 0) < n) {
                     const tc = ctx.teams.get(id)!;
-                    const gets = `${tc.team.name} gets ${tc.target - n + (got.get(id) ?? 0)} of ${tc.target} ${ctx.terms.matches}`;
+                    const gets = `${tc.team.name} gets ${tc.target - n + (got.get(id) ?? 0)} of ${tc.target} ${tc.target === 1 ? ctx.terms.match : ctx.terms.matches}`;
                     // Every game this team plays is one another pool member
                     // plays too, so it can never get more than the rest of the
                     // pool plays in total. That case used to be reported as an

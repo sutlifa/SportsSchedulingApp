@@ -103,6 +103,18 @@ describe("audit: hard (must) problems", () => {
         assert.deepEqual(issue(sameDay, ms2, "m2"), { hard: [], soft: ["C: not on the same day as A"] });
     });
 
+    test("not on the same day: two linked teams playing EACH OTHER is fine, but not alongside another game of theirs that day", () => {
+        const l = base({ rulesA: [rule("not_same_day", { teamIds: ["z"] })], settings: { maxPerDay: 2 } });
+        assert.equal(audit(l, [match("m1", "a", "z", sat("10:30", "s1030"))]).issues.size, 0);
+        // A v Z and Z v A at 10:30 and 14:00: they only play each other -- fine.
+        assert.equal(audit(l, [match("m1", "a", "z", sat("10:30", "s1030")), match("m2", "z", "a", sat("14:00", "s14"))]).issues.size, 0);
+        // A v Z plus C v A the same day: both games are flagged, whichever was placed first.
+        l.teams = l.teams.map((t) => (t.id === "c" ? { ...t, pool: "1" } : t));
+        const ms = [match("m1", "a", "z", sat("10:30", "s1030")), match("m2", "c", "a", sat("14:00", "s14"))];
+        assert.deepEqual(issue(l, ms, "m1").hard, ["Z: not on the same day as A"]);
+        assert.deepEqual(issue(l, ms, "m2").hard, ["A: not on the same day as Z"]);
+    });
+
     test("club limit: must = hard, prefer = soft, named as the club is written on the team", () => {
         const ms = [match("m1", "a", "z", sat("10:00", "s10", { unitIds: ["u1"] })), match("m2", "c", "d", sat("10:00", "s10", { unitIds: ["u2"] }))];
         assert.deepEqual(issue(base({ settings: { clubLimit: 1, clubLimitMode: "must" } }), ms, "m1").hard, ["More than 1 North match at the same time"]);

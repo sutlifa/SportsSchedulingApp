@@ -46,10 +46,29 @@ const ranges = (v: unknown): DateRange[] =>
 let counter = 0;
 const fresh = (prefix: string) => `${prefix}${Date.now().toString(36)}${(counter++).toString(36)}`;
 
+/**
+ * Ids must be unique where the engine keys maps by them: two teams (or slots,
+ * units, matches...) sharing an id silently merged -- two units with one id
+ * counted as two games at once on one real unit. The FIRST holder keeps the
+ * id and later ones get a fresh id. References (a team's bracketId, a match's
+ * home, a slot's unitIds) therefore keep pointing where every `find()` in the
+ * app already pointed them -- at the first -- so nothing that resolved before
+ * resolves differently now. Idempotent: a second pass finds nothing to change.
+ */
+const unique = (seen: Set<string>, prefix: string) => (v: string): string => {
+    let x = v;
+    while (seen.has(x)) x = fresh(prefix);
+    seen.add(x);
+    return x;
+};
+
 export function sanitizeRule(v: unknown): Rule | null {
     const r = obj(v);
     const type = r.type as RuleType;
-    if (typeof type !== "string" || !(type in RULE_DEFS)) return null;
+    // Own keys only: `in` also finds Object.prototype's ("constructor",
+    // "toString", "__proto__"), which fell through the switch below and came
+    // back as `undefined` -- a rule that then crashed audit/readiness/generate.
+    if (typeof type !== "string" || !Object.hasOwn(RULE_DEFS, type)) return null;
     const base = { id: id(r.id, fresh("r")), mode: mode(r.mode) };
     switch (type) {
         case "max_per_weekend":
@@ -79,7 +98,16 @@ export function sanitizeRule(v: unknown): Rule | null {
     }
 }
 
-const rules = (v: unknown): Rule[] => arr(v, LIMITS.rules).map(sanitizeRule).filter((r): r is Rule => r !== null);
+// `r && typeof r === "object"`, not `r !== null`: a sanitizer that ever returns
+// something else (it once returned undefined) must still never put a non-rule
+// in the list the engine walks.
+const rules = (v: unknown): Rule[] => {
+    const once = unique(new Set(), "r");
+    return arr(v, LIMITS.rules)
+        .map(sanitizeRule)
+        .filter((r): r is Rule => !!r && typeof r === "object")
+        .map((r) => ({ ...r, id: once(r.id) }));
+};
 
 export function defaultSettings(sport: SportId = "tennis"): Settings {
     // Each sport starts with its usual game length (hockey 75, tennis 90...).
@@ -110,10 +138,11 @@ export function sanitizeLeague(v: unknown): League {
         clubLimitMode: mode(s.clubLimitMode ?? def.clubLimitMode),
         courtsPerMatch: int(s.courtsPerMatch, def.courtsPerMatch, 1, 20),
     };
+    const bracketId = unique(new Set(), "b");
     const brackets: Bracket[] = arr(d.brackets, LIMITS.brackets).map((x) => {
         const b = obj(x);
         return {
-            id: id(b.id, fresh("b")),
+            id: bracketId(id(b.id, fresh("b"))),
             name: str(b.name, 60) || "Unnamed bracket",
             matches: int(b.matches, 5, 0, 99),
             earliest: time(b.earliest),
@@ -123,14 +152,17 @@ export function sanitizeLeague(v: unknown): League {
             rules: rules(b.rules),
         };
     });
+    const locationId = unique(new Set(), "l");
     const locations: Location[] = arr(d.locations, LIMITS.locations).map((x) => {
         const l = obj(x);
         const units: Unit[] = [];
+        // Within a facility: one unit per name (case-insensitive), one per id.
+        const unitId = unique(new Set(), "u");
         for (const u of arr(l.units, 100).map(obj)) {
             const name = str(u.name, 60).trim();
-            if (name && !units.some((x) => x.name.toLowerCase() === name.toLowerCase())) units.push({ id: id(u.id, fresh("u")), name });
+            if (name && !units.some((x) => x.name.toLowerCase() === name.toLowerCase())) units.push({ id: unitId(id(u.id, fresh("u"))), name });
         }
-        return { id: id(l.id, fresh("l")), name: str(l.name, 120) || "Unnamed location", address: str(l.address, 300), mapUrl: safeMapUrl(str(l.mapUrl, 1000)), notes: str(l.notes, LIMITS.text), units };
+        return { id: locationId(id(l.id, fresh("l"))), name: str(l.name, 120) || "Unnamed location", address: str(l.address, 300), mapUrl: safeMapUrl(str(l.mapUrl, 1000)), notes: str(l.notes, LIMITS.text), units };
     });
     const slots: Slot[] = arr(d.slots, LIMITS.slots)
         .map((x) => {
@@ -138,16 +170,22 @@ export function sanitizeLeague(v: unknown): League {
             return { id: id(sl.id, fresh("s")), day: day(sl.day) ?? 6, time: time(sl.time), locationId: id(sl.locationId, ""), capacity: int(sl.capacity, 1, 0, 100), unitIds: ids(sl.unitIds, 100), bracketIds: ids(sl.bracketIds, LIMITS.brackets) };
         })
         .filter((sl) => sl.time);
+    // Weekly slots and uploaded rows share one namespace: both become an
+    // instance's slotId, and the engine keys instances by (date, slotId).
+    const timeId = unique(new Set(), "s");
+    for (const sl of slots) sl.id = timeId(sl.id);
     const availability: Availability[] = arr(d.availability, LIMITS.availability)
         .map((x) => {
             const a = obj(x);
             return { id: id(a.id, fresh("a")), date: isIsoDate(a.date) ? a.date : "", time: time(a.time), locationId: id(a.locationId, ""), courts: int(a.courts, 0, 0, 200), unitIds: ids(a.unitIds, 100), bracketIds: ids(a.bracketIds, LIMITS.brackets) };
         })
         .filter((a) => a.date && a.time && a.locationId);
+    for (const a of availability) a.id = timeId(a.id);
+    const teamId = unique(new Set(), "t");
     const teams: Team[] = arr(d.teams, LIMITS.teams).map((x) => {
         const t = obj(x);
         return {
-            id: id(t.id, fresh("t")),
+            id: teamId(id(t.id, fresh("t"))),
             name: str(t.name, 120) || "Unnamed team",
             bracketId: id(t.bracketId, ""),
             pool: str(t.pool, 40),
@@ -190,8 +228,11 @@ export function sanitizeSchedule(v: unknown): Schedule {
                 : {}),
         };
     });
+    // A team can't play itself; and match ids key the audit and unit
+    // assignment, so a repeated id is re-issued (first one keeps it).
+    const matchId = unique(new Set(), "m");
     return {
-        matches: matches.filter((m) => m.home && m.away),
+        matches: matches.filter((m) => m.home && m.away && m.home !== m.away).map((m) => ({ ...m, id: matchId(m.id) })),
         generatedAt: typeof s.generatedAt === "string" ? s.generatedAt.slice(0, 40) : null,
         warnings: arr(s.warnings, 200).map((w) => str(w, 500)).filter(Boolean),
     };

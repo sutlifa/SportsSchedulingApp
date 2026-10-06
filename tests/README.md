@@ -42,8 +42,8 @@ in. That is the only module the tests replace. The guard, the routes, sanitize a
 A test that exposes a real bug in the app is marked `{ todo: "BUG: … (file:line)" }` instead of
 being skipped or loosened. It still runs, shows as `# TODO` in the output and doesn't fail
 the run. When the bug is fixed, the todo starts passing and the marker should be removed.
-`fuzz.test.ts` tolerates one known engine bug (`not_same_day`) only in its exact shape, and
-counts how often it happens in its own todo test.
+There are none at the moment. The 15 found when the suite was written are fixed, and their
+tests now assert the fixed behaviour.
 
 ## Database tests
 

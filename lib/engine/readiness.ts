@@ -304,7 +304,7 @@ export function readiness(league: League, name: string): Check[] {
         if (limit && limit.fit < tc.target)
             add("requests", "block", `${team.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${games$(limit.fit)} in the season, but it needs ${tc.target}.`);
     }
-    if (league.teams.length) add("requests", "info", `${withRules} of ${league.teams.length} teams have requests. Add any you’ve been sent; you can always add more later.`);
+    if (league.teams.length) add("requests", "info", `${withRules} of ${league.teams.length} ${league.teams.length === 1 ? "team has" : "teams have"} requests. Add any you’ve been sent; you can always add more later.`);
 
     return out;
 }
