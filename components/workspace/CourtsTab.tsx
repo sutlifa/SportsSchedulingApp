@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { DAY_LONG, formatDate, formatTime, isTime, parseTimes, toMinutes } from "@/lib/engine/dates";
 import { gamesInSlots, type Audit } from "@/lib/engine/engine";
 import { readiness } from "@/lib/engine/readiness";
@@ -107,7 +107,9 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
 
     // The time step's readiness checks: the totals' verdict leads with these
     // so it can't say "plenty of room" while a bracket has no usable time.
-    const timeChecks = only === "facilities" ? [] : readiness(data, doc.name).filter((c) => c.step === "time" && c.level !== "info");
+    // Memoised: CourtsTab re-renders on every keystroke in its own forms, and
+    // readiness() costs ~200 ms on a 200-team league (a Tester find).
+    const timeChecks = useMemo(() => (only === "facilities" ? [] : readiness(data, doc.name).filter((c) => c.step === "time" && c.level !== "info")), [only, data, doc.name]);
 
     const pickLocation = (id: string) => {
         setQLoc(id);

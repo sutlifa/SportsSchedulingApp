@@ -540,6 +540,19 @@ function CopyDialog({
     const copied = new Set(slots.map((s) => s.time));
     const lost = replace ? atLoc.filter((s) => to.includes(s.day) && !copied.has(s.time)) : [];
     const bookedThere = booked(new Set(lost.map((s) => s.id)));
+    // ...unless the copied time is set up differently (its units, "at once"
+    // or "Open to"): its games are re-pointed at the new slot, which may now
+    // refuse them -- a 10U game on a time now open to 12U only is a broken
+    // must-rule. Those are warned about too (a Tester find).
+    const sameSet = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
+    const changed = replace
+        ? atLoc.filter((s) => {
+              if (!to.includes(s.day) || !copied.has(s.time)) return false;
+              const src = slots.find((x) => x.time === s.time)!;
+              return src.capacity !== s.capacity || !sameSet(src.unitIds, s.unitIds) || !sameSet(src.bracketIds, s.bracketIds);
+          })
+        : [];
+    const bookedChanged = booked(new Set(changed.map((s) => s.id)));
     return (
         <Modal title={`Copy ${DAY_LONG[from]}`} onClose={onClose}>
             <div className="grid gap-4">
@@ -598,6 +611,14 @@ function CopyDialog({
                             (bookedThere === 1
                                 ? ` 1 scheduled ${t.match} is booked into ${lost.length === 1 ? "it" : "them"}; it keeps its time and is flagged until you move it or regenerate.`
                                 : ` ${bookedThere} scheduled ${t.matches} are booked into ${lost.length === 1 ? "it" : "them"}; they keep their time and are flagged until you move them or regenerate.`)}
+                    </p>
+                )}
+                {bookedChanged > 0 && (
+                    <p className="text-sm text-warn">
+                        {changed.length === 1 ? "1 time" : `${changed.length} times`} ({changed.map((s) => `${DAY_SHORT[s.day]} ${formatTime(s.time)}`).join(", ")}) will
+                        change {changed.length === 1 ? "its" : "their"} {t.units} or “Open to” to {DAY_LONG[from]}’s.{" "}
+                        {bookedChanged === 1 ? `1 scheduled ${t.match} is` : `${bookedChanged} scheduled ${t.matches} are`} booked there; any the new setup doesn’t
+                        allow will be flagged until you move {bookedChanged === 1 ? "it" : "them"} or regenerate.
                     </p>
                 )}
                 <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">
