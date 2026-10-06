@@ -999,6 +999,47 @@ export function reassignUnitsAfterEdit(before: League, after: League, matches: M
 }
 
 /**
+ * Points each placed game's `slotId` at the time the engine actually binds it
+ * to. spotForMatch falls back from (date, slotId) to (date, time, facility),
+ * so a game whose weekly slot was deleted and re-added -- a day cleared and
+ * refilled, "Copy to… / Replace their times" -- is still bound, just through
+ * a dead id. Left like that, the next delete of the NEW slot wouldn't count
+ * it as booked there. Rewriting the id never changes which time a game is
+ * on (the new id resolves to the same instance), so this is safe on any edit.
+ * Returns the SAME array when nothing changed.
+ */
+export function rebindSlotIds(league: League, matches: Match[], ctxIn?: Ctx): Match[] {
+    const ctx = ctxIn ?? prepare(league);
+    let changed = false;
+    const out = matches.map((m) => {
+        const spot = spotForMatch(ctx, m);
+        if (!spot || spot.idx < 0 || spot.slotId === m.slotId) return m;
+        changed = true;
+        return { ...m, slotId: spot.slotId };
+    });
+    return changed ? out : matches;
+}
+
+/** rebindSlotIds for an edit: only when slots, uploads or facilities changed. */
+export function rebindAfterEdit(before: League, after: League, matches: Match[]): Match[] {
+    if (before.slots === after.slots && before.availability === after.availability && before.locations === after.locations) return matches;
+    return rebindSlotIds(after, matches);
+}
+
+/**
+ * The placed games the engine binds to any of these slots (weekly or
+ * uploaded), matched exactly as spotForMatch does -- not by `slotId` alone,
+ * which both over-counts (a stale id on a date a spreadsheet now covers)
+ * and misses games bound through the time fallback.
+ */
+export function gamesInSlots(ctx: Ctx, matches: Match[], slotIds: Set<string>): Match[] {
+    return matches.filter((m) => {
+        const spot = spotForMatch(ctx, m);
+        return !!spot && spot.idx >= 0 && slotIds.has(spot.slotId);
+    });
+}
+
+/**
  * The audit's message for a game short of its units. Exported so advice.ts
  * and verify-engine match the exact wording.
  */

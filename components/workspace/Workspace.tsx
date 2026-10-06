@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadText, fileSafe, makeBackup } from "@/lib/client/backup";
 import { storeFor, writeMirror, type LeagueRecord, type LeagueStore, type Mode } from "@/lib/client/store";
-import { audit, makeLookup, reassignUnitsAfterEdit } from "@/lib/engine/engine";
+import { audit, makeLookup, reassignUnitsAfterEdit, rebindAfterEdit } from "@/lib/engine/engine";
 import { firstOpenStep, readiness, type StepId } from "@/lib/engine/readiness";
 import { termsFor } from "@/lib/engine/sports";
 import BracketsTab from "./BracketsTab";
@@ -98,7 +98,10 @@ function Editor({ store, mode, rec, userKey, setup }: { store: LeagueStore; mode
         dirty.current = true;
         setDoc((d) => {
             const next = fn(d);
-            const matches = reassignUnitsAfterEdit(d.data, next.data, next.schedule.matches);
+            // Re-point games at the slot they're really in first (a cleared
+            // and refilled day gives the same time a new id), then units.
+            const rebound = rebindAfterEdit(d.data, next.data, next.schedule.matches);
+            const matches = reassignUnitsAfterEdit(d.data, next.data, rebound);
             return matches === next.schedule.matches ? next : { ...next, schedule: { ...next.schedule, matches } };
         });
         setStatus((s) => (s.kind === "conflict" ? s : { kind: "pending" }));

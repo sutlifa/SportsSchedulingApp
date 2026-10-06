@@ -8,7 +8,7 @@
 // one team four matches and another six, and nobody notices until a parent
 // emails. So every promise is asserted here, on fixed scenarios AND on a few
 // hundred randomly generated leagues. Exits non-zero on the first failure.
-import { assignUnits, audit, generate, moveOptions, pairPool, mulberry32, poolKey, reassignUnitsAfterEdit } from "../lib/engine/engine.ts";
+import { assignUnits, audit, gamesInSlots, generate, moveOptions, pairPool, mulberry32, poolKey, prepare, reassignUnitsAfterEdit, rebindAfterEdit, rebindSlotIds } from "../lib/engine/engine.ts";
 import { describeRule } from "../lib/engine/rules.ts";
 import { makeLookup } from "../lib/engine/engine.ts";
 import { SPORT_IDS, sportText, SPORTS } from "../lib/engine/sports.ts";
@@ -477,6 +477,37 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
         for (const reason of [`Every ${t.unit} is already booked at that time`, `The facility’s spreadsheet has no ${t.time} then`, `${t.unitLabel(0)} isn’t listed as free at that time`, `No ${t.unit} assigned`])
             assert(!/\bunits?\b/.test(adviceFor(reason, l).tip), `${sport}: advice never says “unit”: ${adviceFor(reason, l).tip}`);
     }
+}
+
+// --- slot ids follow the engine's binding -----------------------------------------
+// The day planner's "Clear" + "Add times" and "Copy to… / Replace" give a
+// time a NEW slot id. The engine still binds the booked games (date, time,
+// facility fallback); the editor re-points their slotId so the next delete
+// of the new slot counts and warns about them.
+{
+    const league = sampleLeague();
+    const r = fixedRun(league);
+    const ctx = prepare(league);
+    assert(rebindSlotIds(league, r.matches, ctx) === r.matches, "a fresh schedule needs no re-binding");
+    const busy = league.slots.find((s) => r.matches.some((m) => m.slotId === s.id))!;
+    const before = gamesInSlots(ctx, r.matches, new Set([busy.id]));
+    assert(before.length > 0 && before.length === r.matches.filter((m) => m.slotId === busy.id).length, "gamesInSlots counts a slot's booked games");
+    const fresh = { ...busy, id: "replaced-slot" };
+    const replaced = { ...league, slots: [...league.slots.filter((s) => s.id !== busy.id), fresh] };
+    const ctx2 = prepare(replaced);
+    assert(gamesInSlots(ctx2, r.matches, new Set([fresh.id])).length === before.length, "games on a replaced time count as booked in the new slot (time fallback)");
+    const rebound = rebindAfterEdit(league, replaced, r.matches);
+    assert(rebound !== r.matches && rebound.filter((m) => m.slotId === fresh.id).length === before.length, "re-binding points them at the new slot");
+    assert(!rebound.some((m) => m.slotId === busy.id), "no game keeps the dead slot id");
+    assert(rebound.every((m, i) => m.date === r.matches[i].date && m.time === r.matches[i].time && m.locationId === r.matches[i].locationId), "re-binding never moves a game");
+    const a1 = audit(replaced, rebound);
+    assert(![...a1.issues.values()].some((v) => v.soft.some((x) => /no longer in the weekly slots/.test(x))), "re-bound games aren't flagged as off the weekly slots");
+    assert(rebindAfterEdit(replaced, { ...replaced, teams: [...replaced.teams] }, rebound) === rebound, "an edit that doesn't touch time skips re-binding");
+    // A cleared time with nothing to re-bind to: the game keeps its id and is flagged.
+    const cleared = { ...league, slots: league.slots.filter((s) => s.id !== busy.id) };
+    const kept = rebindAfterEdit(league, cleared, r.matches);
+    assert(kept.filter((m) => m.slotId === busy.id).length === before.length, "a game whose time is gone keeps its slot id");
+    assert(gamesInSlots(prepare(cleared), kept, new Set([busy.id])).length === 0, "and no longer counts as booked anywhere");
 }
 
 // --- performance: a big league stays interactive ----------------------------------

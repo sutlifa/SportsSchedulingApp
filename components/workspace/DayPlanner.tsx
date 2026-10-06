@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import type { Audit } from "@/lib/engine/engine";
-import { DAY_LONG, DAY_SHORT, formatTime, parseTimes, toMinutes } from "@/lib/engine/dates";
+import { bracketHard, teamTarget, type Audit } from "@/lib/engine/engine";
+import type { Check } from "@/lib/engine/readiness";
+import { DAY_LONG, DAY_SHORT, formatTime, isIsoDate, parseTimes, toMinutes } from "@/lib/engine/dates";
 import { countOf, type Terms } from "@/lib/engine/sports";
 import type { DayOfWeek, League, Location, Slot } from "@/lib/engine/types";
-import { slotCapacity, unitNames } from "./CourtsTab";
+import { bookedIn, slotCapacity, unitNames } from "./CourtsTab";
 import { withData, type Doc } from "./types";
-import { ConfirmButton, Modal, uid } from "./ui";
+import { ConfirmButton, Modal, uid, useFocusLater } from "./ui";
 
 /*
  * The weekly day planner: one facility's week as a Mon -> Sun board, so an
@@ -24,6 +25,7 @@ const WEEKEND: DayOfWeek[] = [6, 0];
 const isWeekendDay = (d: DayOfWeek) => d === 0 || d === 6;
 
 const spotWord = (n: number, t: Terms) => `${n} ${t.match} spot${n === 1 ? "" : "s"}`;
+const timesWord = (n: number) => `${n} time${n === 1 ? "" : "s"}`;
 
 /** Sum of games-at-once over some slots: one week's worth of game spots. */
 function spotsOf(slots: Slot[], league: League): number {
@@ -42,6 +44,8 @@ function bracketNames(s: Slot, league: League): string[] {
 type Props = {
     doc: Doc;
     change: (fn: (d: Doc) => Doc) => void;
+    /** The current audit: its ctx binds booked games to slots exactly as the engine does. */
+    result: Audit;
     t: Terms;
     /** The facility on the board. Shared with the quick-add form so what it adds lands on the board in view. */
     locId: string;
@@ -52,7 +56,7 @@ type Props = {
 
 type Note = { locId: string; day: DayOfWeek; text: string; warn?: boolean };
 
-export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallbackAtOnce }: Props) {
+export default function DayPlanner({ doc, change, result, t, locId, onEditSlot, fallbackAtOnce }: Props) {
     const data = doc.data;
     const loc = data.locations.find((l) => l.id === locId);
     // Which day's "Add times" box is open. Keyed by facility too, so
@@ -61,9 +65,10 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
     const [addText, setAddText] = useState("");
     const [note, setNote] = useState<Note | null>(null);
     const [copyFrom, setCopyFrom] = useState<DayOfWeek | null>(null);
+    const focusLater = useFocusLater();
     if (!loc) return null;
 
-    const cpm = Math.max(1, data.settings.courtsPerMatch || 1);
+    const cpm = Math.max(1, Math.floor(data.settings.courtsPerMatch || 1));
     const atLoc = data.slots.filter((s) => s.locationId === loc.id);
     const dayOf = (day: DayOfWeek) => atLoc.filter((s) => s.day === day).sort((a, b) => toMinutes(a.time) - toMinutes(b.time));
     // New times get every unit at the facility: the common case is "the whole
@@ -97,7 +102,14 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
         if (add.length) {
             setAdding(null);
             setAddText("");
+            // The box (and the focused input) goes; carry on from this day's button.
+            focusLater(`planner-add-${day}`);
         }
+    };
+
+    const closeAdd = (day: DayOfWeek) => {
+        setAdding(null);
+        focusLater(`planner-add-${day}`);
     };
 
     const copyDay = (from: DayOfWeek, to: DayOfWeek[], replace: boolean) => {
@@ -117,17 +129,25 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
         }
         // Removing a slot leaves games booked into it where they are (with a
         // flag), exactly as Delete slot in the slot's dialog does: the
-        // organiser decides whether to move them or regenerate.
-        change((d) => withData(d, { slots: [...d.data.slots.filter((s) => !removeIds.has(s.id)), ...add] }));
+        // organiser decides whether to move them or regenerate. Games at a
+        // time the copy puts back are re-pointed at the new slot by
+        // Workspace's change (rebindAfterEdit), so they aren't flagged.
         const names = WEEK.filter((d) => targets.has(d)).map((d) => DAY_SHORT[d]).join(", ");
-        setNote({ locId: loc.id, day: from, text: `Copied to ${names}.${skipped ? ` Skipped ${skipped} time${skipped === 1 ? "" : "s"} already there.` : ""}` });
         setCopyFrom(null);
+        if (!add.length && !removeIds.size) {
+            setNote({ locId: loc.id, day: from, warn: true, text: `Nothing copied: ${names} already ${targets.size === 1 ? "has" : "have"} these times.` });
+            return;
+        }
+        change((d) => withData(d, { slots: [...d.data.slots.filter((s) => !removeIds.has(s.id)), ...add] }));
+        setNote({ locId: loc.id, day: from, text: `Copied to ${names}.${skipped ? ` Skipped ${timesWord(skipped)} already there.` : ""}` });
     };
 
     const clearDay = (day: DayOfWeek) => {
         const ids = new Set(dayOf(day).map((s) => s.id));
         change((d) => withData(d, { slots: d.data.slots.filter((s) => !ids.has(s.id)) }));
         setNote({ locId: loc.id, day, text: `Cleared ${DAY_LONG[day]}.` });
+        // Clear (and everything but Add) vanishes with the day's times.
+        focusLater(`planner-day-${day}`);
     };
 
     const renderSlot = (s: Slot) => {
@@ -137,6 +157,7 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
             <li key={s.id} className="min-w-0">
                 <button
                     type="button"
+                    id={`slot-btn-${s.id}`}
                     onClick={() => onEditSlot(s)}
                     aria-label={`${DAY_LONG[s.day]} ${formatTime(s.time)}, ${where}${open.length ? `, open to ${open.join(", ")}` : ""}`}
                     className="block w-full min-w-0 rounded-md border border-border bg-surface-2 px-2 py-1.5 text-left hover:border-accent"
@@ -148,9 +169,10 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                             {s.bracketIds.map((id) => {
                                 const b = data.brackets.find((x) => x.id === id);
                                 return b ? (
-                                    <span key={id} className="chip border border-border bg-surface px-1.5 text-[0.7rem] text-fg">
-                                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: b.color }} aria-hidden />
-                                        {b.name}
+                                    <span key={id} className="chip min-w-0 max-w-full border border-border bg-surface px-1.5 text-[0.7rem] text-fg">
+                                        <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: b.color }} aria-hidden />
+                                        {/* A long bracket name can't widen a narrow day column. */}
+                                        <span className="min-w-0 truncate">{b.name}</span>
                                     </span>
                                 ) : null;
                             })}
@@ -167,10 +189,14 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
         const isAdding = adding?.locId === loc.id && adding.day === day;
         const dayNote = note?.locId === loc.id && note.day === day ? note : null;
         const inputId = `add-times-${day}`;
+        const bookedHere = list.length ? bookedIn(result, doc.schedule.matches, list.map((s) => s.id)) : 0;
         return (
             <section key={day} aria-label={DAY_LONG[day]} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-2.5">
                 <div className="min-w-0">
-                    <h3 className="font-display text-lg font-bold uppercase tracking-wide">{DAY_LONG[day]}</h3>
+                    {/* tabIndex -1: where focus goes after Clear empties the day. */}
+                    <h3 id={`planner-day-${day}`} tabIndex={-1} className="font-display text-lg font-bold uppercase tracking-wide">
+                        {DAY_LONG[day]}
+                    </h3>
                     <p className={`text-xs tabular ${spots ? "font-semibold text-fg" : "text-muted"}`}>{spotWord(spots, t)}</p>
                 </div>
                 {list.length > 0 && <ul className="grid gap-1.5">{list.map(renderSlot)}</ul>}
@@ -194,7 +220,7 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                             autoFocus
                             onChange={(e) => setAddText(e.target.value)}
                             onKeyDown={(e) => {
-                                if (e.key === "Escape") setAdding(null);
+                                if (e.key === "Escape") closeAdd(day);
                             }}
                         />
                         <p className="text-xs text-muted">{parsed.length ? `Reads as: ${parsed.map(formatTime).join(", ")}` : "e.g. 9, 10:30, 1pm"}</p>
@@ -202,7 +228,7 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                             <button type="submit" className="btn-primary btn-sm" disabled={!parsed.length}>
                                 Add
                             </button>
-                            <button type="button" className="btn-ghost btn-sm" onClick={() => setAdding(null)}>
+                            <button type="button" className="btn-ghost btn-sm" onClick={() => closeAdd(day)}>
                                 Cancel
                             </button>
                         </div>
@@ -217,6 +243,8 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                     {!isAdding && (
                         <button
                             type="button"
+                            id={`planner-add-${day}`}
+                            aria-label={`Add times on ${DAY_LONG[day]}`}
                             className="btn-ghost btn-sm px-1.5 text-accent"
                             onClick={() => {
                                 setAdding({ locId: loc.id, day });
@@ -229,10 +257,20 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                     )}
                     {list.length > 0 && (
                         <>
-                            <button type="button" className="btn-ghost btn-sm px-1.5" onClick={() => setCopyFrom(day)}>
+                            <button type="button" className="btn-ghost btn-sm px-1.5" aria-label={`Copy ${DAY_LONG[day]} to…`} onClick={() => setCopyFrom(day)}>
                                 Copy to…
                             </button>
-                            <ConfirmButton className="btn-ghost btn-sm px-1.5 hover:text-danger" label="Clear" confirmLabel={`Clear ${list.length}?`} onConfirm={() => clearDay(day)} />
+                            <ConfirmButton
+                                // whitespace-normal!: .btn is nowrap, and the confirm
+                                // sentence must wrap inside a narrow day column.
+                                className="btn-ghost btn-sm whitespace-normal! px-1.5 text-left hover:text-danger"
+                                label="Clear"
+                                ariaLabel={`Clear ${DAY_LONG[day]}`}
+                                confirmLabel={`Clear ${timesWord(list.length)}?${
+                                    bookedHere ? ` ${bookedHere === 1 ? `1 scheduled ${t.match} uses` : `${bookedHere} scheduled ${t.matches} use`} ${list.length === 1 ? "it" : "them"} and will be flagged.` : ""
+                                }`}
+                                onConfirm={() => clearDay(day)}
+                            />
                         </>
                     )}
                 </div>
@@ -261,8 +299,8 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                 </div>
             </div>
             <p className="text-xs text-muted">
-                Press a time to change its {t.units}, its day or who it’s open to. New times get all of {loc.name}’s {t.units}
-                {loc.units.length ? "" : ` (${countOf(newAtOnce, t)} at once)`} and are open to every bracket.
+                Press a time to change its {t.units}, its day or who it’s open to.{" "}
+                {loc.units.length ? `New times get all of ${loc.name}’s ${t.units}` : `New times here hold ${countOf(newAtOnce, t)} at once`} and are open to every bracket.
             </p>
             {copyFrom !== null && (
                 <CopyDialog
@@ -270,7 +308,7 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
                     loc={loc}
                     slots={dayOf(copyFrom)}
                     atLoc={atLoc}
-                    booked={(ids) => doc.schedule.matches.filter((m) => m.slotId && ids.has(m.slotId)).length}
+                    booked={(ids) => bookedIn(result, doc.schedule.matches, ids)}
                     t={t}
                     onClose={() => setCopyFrom(null)}
                     onCopy={(to, replace) => copyDay(copyFrom, to, replace)}
@@ -283,7 +321,9 @@ export default function DayPlanner({ doc, change, t, locId, onEditSlot, fallback
 /** One facility pill per facility, with its weekly game spots. */
 export function FacilityPills({ league, t, locId, onPick }: { league: League; t: Terms; locId: string; onPick: (id: string) => void }) {
     return (
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Facility on the board">
+        // min-w-0: this is a grid item, and without it a long facility name
+        // sizes the whole page wider than a phone before `truncate` can act.
+        <div className="flex min-w-0 flex-wrap gap-2" role="group" aria-label="Facility on the board">
             {league.locations.map((l) => {
                 const on = l.id === locId;
                 const n = spotsOf(
@@ -319,29 +359,70 @@ export function FacilityPills({ league, t, locId, onPick }: { league: League; t:
  * The season number comes from the derived instances (`result.ctx`), which
  * already drop blackouts and swap in uploaded facility sheets, so it is the
  * real count rather than "per week x weeks".
+ *
+ * The verdict is NOT just "season spots vs games needed": a league can have
+ * hundreds of spots and still not schedule because every slot is "Open to"
+ * 12U only, or 10U's start window misses every time. So it leads with the
+ * readiness checks for the time step (`checks`, from readiness.ts -- the same
+ * ones that disable Next in the setup wizard) and never says "plenty" while
+ * one of them blocks. The per-bracket line shows where the room actually is.
  */
-export function SpotTotals({ league, result, t, location, needed }: { league: League; result: Audit; t: Terms; location?: Location; needed: number }) {
+export function SpotTotals({
+    league,
+    result,
+    t,
+    location,
+    needed,
+    checks,
+}: {
+    league: League;
+    result: Audit;
+    t: Terms;
+    location?: Location;
+    needed: number;
+    /** readiness() checks for the time step. */
+    checks: Check[];
+}) {
+    const s = league.settings;
+    const hasDates = isIsoDate(s.seasonStart) && isIsoDate(s.seasonEnd) && s.seasonEnd >= s.seasonStart;
     const scopes: { key: string; name: string; slots: Slot[]; season: number }[] = [];
     if (location)
         scopes.push({
             key: location.id,
             name: location.name,
-            slots: league.slots.filter((s) => s.locationId === location.id),
+            slots: league.slots.filter((x) => x.locationId === location.id),
             season: result.ctx.instances.filter((i) => i.locationId === location.id).reduce((n, i) => n + i.capacity, 0),
         });
     const seasonAll = result.ctx.instances.reduce((n, i) => n + i.capacity, 0);
     scopes.push({ key: "all", name: "All facilities", slots: league.slots, season: seasonAll });
-    const tone = !needed ? "none" : seasonAll < needed ? "short" : seasonAll < needed * 1.5 ? "tight" : "ok";
+    const blocks = checks.filter((c) => c.level === "block");
+    const warns = checks.filter((c) => c.level === "warn");
+    const perBracket = hasDates
+        ? league.brackets.map((b) => ({
+              name: b.name,
+              usable: result.ctx.instances.filter((i) => bracketHard(b, i) === null).reduce((n, i) => n + i.capacity, 0),
+              games: Math.floor(league.teams.filter((x) => x.bracketId === b.id).reduce((n, x) => n + teamTarget(x, b), 0) / 2),
+          }))
+        : [];
+    const tone = !hasDates
+        ? "nodates"
+        : blocks.length || (needed && seasonAll < needed)
+          ? "short"
+          : !needed
+            ? "none"
+            : warns.length || seasonAll < needed * 1.5
+              ? "tight"
+              : "ok";
     return (
         <div className="grid gap-2">
             <div className={`grid gap-2 ${scopes.length > 1 ? "md:grid-cols-2" : ""}`}>
                 {scopes.map((sc) => {
                     const weekday = spotsOf(
-                        sc.slots.filter((s) => !isWeekendDay(s.day)),
+                        sc.slots.filter((x) => !isWeekendDay(x.day)),
                         league,
                     );
                     const weekend = spotsOf(
-                        sc.slots.filter((s) => isWeekendDay(s.day)),
+                        sc.slots.filter((x) => isWeekendDay(x.day)),
                         league,
                     );
                     return (
@@ -361,29 +442,67 @@ export function SpotTotals({ league, result, t, location, needed }: { league: Le
                                 </div>
                                 <div className="min-w-0">
                                     <dt className="text-xs text-muted">Season</dt>
-                                    <dd className="font-semibold tabular">{sc.season}</dd>
+                                    {/* No dates, no season: a 0 here read as "no room at all". */}
+                                    <dd className="font-semibold tabular">{hasDates ? sc.season : "—"}</dd>
                                 </div>
                             </dl>
                         </div>
                     );
                 })}
             </div>
-            <p className="text-sm tabular">
-                {tone === "none" ? (
-                    <span className="text-muted">No teams yet, so no {t.matches} needed yet. Add teams to compare.</span>
+            <div className="grid gap-1 text-sm tabular" aria-label="Is there enough time?" role="group">
+                {tone === "nodates" ? (
+                    <p className="text-muted">Set the season dates to see season totals.</p>
+                ) : tone === "short" ? (
+                    <>
+                        <p>
+                            {needed > 0 && `${countOf(needed, t)} needed, ${spotWord(seasonAll, t)} across the season: `}
+                            <strong className="text-danger">not enough usable {t.time} yet.</strong>
+                        </p>
+                        {blocks.length > 0 && (
+                            <ul className="grid gap-0.5 text-danger">
+                                {blocks.map((c) => (
+                                    <li key={c.text}>{c.text}</li>
+                                ))}
+                            </ul>
+                        )}
+                    </>
+                ) : tone === "none" ? (
+                    <p className="text-muted">No teams yet, so no {t.matches} needed yet. Add teams to compare.</p>
                 ) : (
                     <>
-                        {countOf(needed, t)} needed, {spotWord(seasonAll, t)} across the season:{" "}
-                        {tone === "short" ? (
-                            <strong className="text-danger">not enough {t.time} for every {t.match}.</strong>
-                        ) : tone === "tight" ? (
-                            <strong className="text-warn">enough, but tight. Some requests may not be met.</strong>
-                        ) : (
-                            <strong className="text-ok">plenty of room.</strong>
+                        <p>
+                            {countOf(needed, t)} needed, {spotWord(seasonAll, t)} across the season:{" "}
+                            {tone === "tight" ? (
+                                <strong className="text-warn">enough, but tight. Some requests may not be met.</strong>
+                            ) : (
+                                <strong className="text-ok">plenty of room.</strong>
+                            )}
+                        </p>
+                        {warns.length > 0 && (
+                            <ul className="grid gap-0.5 text-warn">
+                                {warns.map((c) => (
+                                    <li key={c.text}>{c.text}</li>
+                                ))}
+                            </ul>
                         )}
                     </>
                 )}
-            </p>
+                {perBracket.length > 0 && (
+                    <p className="text-xs text-muted">
+                        Spots each bracket can use this season (its start window, days and “Open to”):{" "}
+                        {perBracket.map((b, i) => (
+                            <span key={b.name}>
+                                {i > 0 && " · "}
+                                <span className={b.usable === 0 || (b.games > 0 && b.usable < b.games) ? "font-semibold text-danger" : "text-fg"}>
+                                    {b.name} {b.usable}
+                                    {b.games > 0 && ` (${b.games} needed)`}
+                                </span>
+                            </span>
+                        ))}
+                    </p>
+                )}
+            </div>
             <p className="text-xs text-muted">
                 Season totals skip blackout dates. On dates a facility spreadsheet covers, that facility uses the spreadsheet’s times instead of these weekly
                 ones (see Facility availability below).
@@ -415,13 +534,17 @@ function CopyDialog({
     const [replace, setReplace] = useState(false);
     const others = WEEK.filter((d) => d !== from);
     const pick = (days: DayOfWeek[]) => setTo(days.filter((d) => d !== from));
-    const replacing = replace ? atLoc.filter((s) => to.includes(s.day)) : [];
-    const bookedThere = booked(new Set(replacing.map((s) => s.id)));
+    // Only times the copy doesn't put back are really lost: a 5:00 PM replaced
+    // by a copied 5:00 PM keeps its booked games (they're re-pointed at the
+    // new slot), so they aren't counted or warned about.
+    const copied = new Set(slots.map((s) => s.time));
+    const lost = replace ? atLoc.filter((s) => to.includes(s.day) && !copied.has(s.time)) : [];
+    const bookedThere = booked(new Set(lost.map((s) => s.id)));
     return (
         <Modal title={`Copy ${DAY_LONG[from]}`} onClose={onClose}>
             <div className="grid gap-4">
                 <p className="text-sm">
-                    Copies {DAY_LONG[from]}’s {slots.length} time{slots.length === 1 ? "" : "s"} at {loc.name} ({slots.map((s) => formatTime(s.time)).join(", ")}), with
+                    Copies {DAY_LONG[from]}’s {timesWord(slots.length)} at {loc.name} ({slots.map((s) => formatTime(s.time)).join(", ")}), with
                     their {t.units} and “Open to”, to:
                 </p>
                 <div className="grid gap-2">
@@ -468,11 +591,13 @@ function CopyDialog({
                         Replace their times
                     </label>
                 </fieldset>
-                {replace && replacing.length > 0 && (
+                {lost.length > 0 && (
                     <p className="text-sm text-warn">
-                        This removes {replacing.length} time{replacing.length === 1 ? "" : "s"} at {loc.name}.
+                        This removes {timesWord(lost.length)} at {loc.name} ({lost.map((s) => `${DAY_SHORT[s.day]} ${formatTime(s.time)}`).join(", ")}).
                         {bookedThere > 0 &&
-                            ` ${bookedThere === 1 ? `1 scheduled ${t.match} uses` : `${bookedThere} scheduled ${t.matches} use`} them; they keep their time and are flagged until you move them or regenerate.`}
+                            (bookedThere === 1
+                                ? ` 1 scheduled ${t.match} is booked into ${lost.length === 1 ? "it" : "them"}; it keeps its time and is flagged until you move it or regenerate.`
+                                : ` ${bookedThere} scheduled ${t.matches} are booked into ${lost.length === 1 ? "it" : "them"}; they keep their time and are flagged until you move them or regenerate.`)}
                     </p>
                 )}
                 <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-4">

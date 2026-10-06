@@ -162,8 +162,24 @@ export function RangesInput({ value, onChange, idPrefix }: { value: DateRange[];
     );
 }
 
-/** Two-step destructive button: the first click arms it, the second acts. */
-export function ConfirmButton({ label, confirmLabel, onConfirm, className = "btn-danger" }: { label: string; confirmLabel: string; onConfirm: () => void; className?: string }) {
+/**
+ * Two-step destructive button: the first click arms it, the second acts.
+ * `ariaLabel` names the unarmed button when its visible label is too short to
+ * stand alone ("Clear" -> "Clear Saturday"); armed, the confirm text is read.
+ */
+export function ConfirmButton({
+    label,
+    confirmLabel,
+    onConfirm,
+    className = "btn-danger",
+    ariaLabel,
+}: {
+    label: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+    className?: string;
+    ariaLabel?: string;
+}) {
     const [armed, setArmed] = useState(false);
     useEffect(() => {
         if (!armed) return;
@@ -171,7 +187,7 @@ export function ConfirmButton({ label, confirmLabel, onConfirm, className = "btn
         return () => clearTimeout(t);
     }, [armed]);
     return (
-        <button type="button" className={className} onClick={() => (armed ? onConfirm() : setArmed(true))}>
+        <button type="button" className={className} aria-label={armed ? undefined : ariaLabel} onClick={() => (armed ? onConfirm() : setArmed(true))}>
             {armed ? confirmLabel : label}
         </button>
     );
@@ -225,13 +241,46 @@ export function NumberInput({ id, value, onChange, min = 0, max = 99, placeholde
                 // ("4" on the way to "45"): wait for blur rather than clamp.
                 if (Number.isFinite(n) && n >= min) onChange(clamp(n));
             }}
-            onBlur={() => {
+            onBlur={(e) => {
                 if (draft !== null && draft !== "") {
                     const n = Number(draft);
-                    if (Number.isFinite(n)) onChange(clamp(n));
+                    if (Number.isFinite(n)) {
+                        const clean = clamp(n);
+                        // "1e1" is the number 10, so React sees nothing to
+                        // update and would leave "1e1" on screen. Write the
+                        // stored number back to the box ourselves.
+                        e.target.value = String(clean);
+                        onChange(clean);
+                    }
                 }
                 setDraft(null);
             }}
         />
     );
+}
+
+/**
+ * Moves focus after the next render, to the first of `ids` that exists then.
+ * For actions that remove the focused element (Clear, Add closing its box, a
+ * slot saved onto another day): without it focus falls to <body> and a
+ * keyboard user starts again from the top of the page. A ref, not state, so
+ * asking doesn't itself render, and the effect never sets state.
+ */
+export function useFocusLater(): (...ids: string[]) => void {
+    const pending = useRef<string[] | null>(null);
+    useEffect(() => {
+        const ids = pending.current;
+        if (!ids) return;
+        pending.current = null;
+        for (const id of ids) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.focus();
+                return;
+            }
+        }
+    });
+    return (...ids: string[]) => {
+        pending.current = ids;
+    };
 }
