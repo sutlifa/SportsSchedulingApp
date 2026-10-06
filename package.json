@@ -11,7 +11,9 @@
     "db:migrate": "node --experimental-strip-types scripts/migrate.ts",
     "verify": "node --experimental-strip-types --no-warnings scripts/verify-engine.ts && node --experimental-strip-types --no-warnings scripts/verify-import.ts && node --experimental-strip-types --no-warnings scripts/verify-readiness.ts",
     "sheets": "python3 scripts/make-tutorial-sheets.py",
-    "verify:db": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/verify-db.ts"
+    "verify:db": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/verify-db.ts",
+    "test": "node --experimental-strip-types --no-warnings --import ./tests/support/register.mjs --test 'tests/!(db)/**/*.test.ts'",
+    "test:db": "node --experimental-strip-types --no-warnings --import ./tests/support/register.mjs --test --test-concurrency=1 'tests/db/**/*.test.ts'"
   },
   "dependencies": {
     "next": "16.3.5",

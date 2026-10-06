@@ -140,6 +140,9 @@ the architecture and the rules that keep it correct.
 ```bash
 npm run lint && npm run typecheck && npm run build   # must pass with NO env vars
 npm run verify          # scheduler + import invariants (~32k checks incl. fuzzing, every sport)
+npm test                # unit tests: every lib module, the API routes' guards (~600 tests, no DB)
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/<throwaway> npm run test:db
+                        # unit tests that need Postgres: queries, ownership, versioning, routes end to end
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/<throwaway> npm run verify:db
                         # persistence: ownership, versioned saves, soft delete (local DB only)
 npm run sheets          # regenerate the guide's sample facility sheets (needs python3 + openpyxl)
@@ -170,6 +173,7 @@ lib/import/          facility spreadsheets: xlsx reader, CSV/paste, layout guess
 lib/                 db, leagues (queries), guard (API auth + error refs), client/ (stores, backups)
 public/tutorial/     the tutorial's sample facility sheets, one per sport (scripts/make-tutorial-sheets.py)
 scripts/             verify-*.ts (headless invariants), e2e/tutorial.mjs, migrate.ts
+tests/               unit tests (node:test), mirroring lib/ -- see tests/README.md
 ```
 
 Deploying: push to `main`, and Vercel builds and deploys it. The repository is still named

@@ -138,6 +138,8 @@ match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don'
 npm run lint && npm run typecheck && npm run build   # build must pass with NO env vars
 npm run verify                                       # engine + import invariants (~8s), incl. fuzz, all sports
 npm run sheets                                       # regenerate public/tutorial sample sheets
+npm test                                             # unit tests (node:test, ~10s, no DB); see tests/README.md
+npm run test:db                                      # DB + API unit tests; needs a LOCAL throwaway DATABASE_URL
 npm run verify:db                                    # needs a LOCAL throwaway DATABASE_URL
 npm run db:migrate                                   # optional; app self-migrates
 ```
