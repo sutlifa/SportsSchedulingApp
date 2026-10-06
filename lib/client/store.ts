@@ -42,7 +42,13 @@ async function errorText(res: Response): Promise<string> {
     } catch {
         // fall through
     }
-    return res.status === 401 ? "Please sign in again." : "Something went wrong. Try again in a moment.";
+    // The server sends a readable `error`; these cover responses that didn't
+    // come from our code (a proxy, a timeout, Vercel itself).
+    if (res.status === 401) return "You’ve been signed out. Sign in again in another tab; your changes stay on this page.";
+    if (res.status === 413) return "This league is too large to save.";
+    if (res.status === 404) return "This league wasn’t found. It may have been deleted.";
+    if (res.status === 502 || res.status === 503 || res.status === 504) return `The server is busy or restarting (error ${res.status}). We’ll keep trying.`;
+    return `Something went wrong (error ${res.status}). Try again in a moment.`;
 }
 
 export const cloudStore: LeagueStore = {

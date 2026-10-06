@@ -155,8 +155,12 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                     {leagues === null && !error && <p className="text-muted">Loading…</p>}
                     {leagues?.length === 0 && (
                         <div className="card p-6 text-muted">
-                            No leagues yet. Create one on the right. <strong className="text-fg">Start from the example</strong> to see a finished
-                            schedule straight away, then swap in your real teams.
+                            No leagues yet. Create one with the form. <strong className="text-fg">Start from the example</strong> to see a finished
+                            schedule straight away, or follow the{" "}
+                            <Link href="/guide#tutorial" className="font-semibold text-accent underline">
+                                step-by-step tutorial
+                            </Link>{" "}
+                            to build one from scratch.
                         </div>
                     )}
                     {leagues?.map((l) => (
@@ -175,7 +179,14 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                 </div>
             </section>
 
-            <aside>
+            <aside className="grid content-start gap-4">
+                <Link href="/guide#tutorial" className="card block border-accent/40 bg-accent-soft p-4 hover:border-accent">
+                    <div className="font-display text-xl font-bold uppercase tracking-wide">New here?</div>
+                    <p className="mt-1 text-sm">
+                        Follow the step-by-step tutorial: build a full league with brackets, facilities, a court spreadsheet and captain requests in about 20
+                        minutes. <span className="font-semibold text-accent underline">Open the guide</span>
+                    </p>
+                </Link>
                 <form onSubmit={create} className="card grid gap-4 p-5">
                     <h2 className="font-display text-2xl font-bold uppercase tracking-wide">New league</h2>
                     <div>

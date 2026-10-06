@@ -170,6 +170,14 @@ export function sanitizeSchedule(v: unknown): Schedule {
             slotId: placed ? id(m.slotId, "") || null : null,
             locked: m.locked === true,
             ...(typeof m.note === "string" && m.note ? { note: m.note.slice(0, 1000) } : {}),
+            ...(Array.isArray(m.blockers) && m.blockers.length
+                ? {
+                      blockers: arr(m.blockers, 5)
+                          .map(obj)
+                          .filter((b) => typeof b.reason === "string" && b.reason)
+                          .map((b) => ({ reason: str(b.reason, 300), count: int(b.count, 0, 0, 100_000) })),
+                  }
+                : {}),
         };
     });
     return {

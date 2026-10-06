@@ -163,6 +163,12 @@ export type Match = {
     locked: boolean;
     /** Why an unplaced match could not be placed. */
     note?: string;
+    /**
+     * For an unplaced match: the most common reasons it was blocked, each with
+     * how many of the season's open times that reason ruled out. The UI turns
+     * these into a fix and a link to the tab where it's made (advice.ts).
+     */
+    blockers?: { reason: string; count: number }[];
 };
 
 export type Schedule = {

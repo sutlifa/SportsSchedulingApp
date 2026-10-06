@@ -11,6 +11,7 @@
 import { audit, generate, moveOptions, pairPool, mulberry32, poolKey } from "../lib/engine/engine.ts";
 import { dowOf, isoToDay, isWeekend, parseTimes, toMinutes, weekendKey, formatTime } from "../lib/engine/dates.ts";
 import { sampleLeague } from "../lib/engine/sample.ts";
+import { adviceFor } from "../lib/engine/advice.ts";
 import type { DayOfWeek, League, Match, Rule, Team } from "../lib/engine/types.ts";
 
 let checks = 0;
@@ -265,6 +266,10 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
         const r = generate(league, [], { scope: "all", seed: trial, maxAttempts: 4, timeBudgetMs: 1e9, now: () => 0 });
         checkInvariants(league, r.matches, `fuzz #${trial}`);
         for (const m of r.matches.filter((x) => !x.date)) assert(m.note, `fuzz #${trial}: unplaced match without a reason`);
+        // Every problem the engine can report must come with specific advice
+        // (a fix and the tab to make it on), not the generic fallback.
+        const reasons = [...r.matches.flatMap((m) => (m.blockers ?? []).map((b) => b.reason)), ...[...audit(league, r.matches).issues.values()].flatMap((v) => [...v.hard, ...v.soft])];
+        for (const reason of reasons) assert(adviceFor(reason, league).tab !== null, `fuzz #${trial}: no specific advice for “${reason}”`);
     }
 }
 

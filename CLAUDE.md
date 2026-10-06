@@ -48,6 +48,9 @@ lib/db/schema.ts  the whole DDL as a string; lib/db/ensure.ts runs it once per c
 lib/leagues.ts    every leagues query; user_id + deleted_at filtered IN the SQL
 lib/client/store.ts  cloud (API) and browser (localStorage) stores behind one interface
 components/workspace/  the league editor (tabs)
+  advice.ts       problem message → plain fix + the tab to make it on (matches engine
+                  wording exactly; verify-engine asserts every engine message has advice)
+app/guide/        user guide + tutorial; scripts/e2e/tutorial.mjs drives it word for word
 scripts/verify-engine.ts  headless invariants — run it, don't eyeball
 ```
 
@@ -76,7 +79,11 @@ match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don'
 - **"must" rules are never broken by the generator** — an unplaced match with a reason beats
   a placed match that breaks a rule. Hand moves may break one, but say so and stay flagged.
 - **Moving a match locks it.** Regenerate replaces only unlocked matches in scope.
-- **API routes:** guard → try/catch → human message; `console.error` with an UPPERCASE label.
+- **API routes:** guard → try/catch → human message; 500s go through `serverError()` in
+  lib/guard.ts, which logs under an UPPERCASE label with a reference code and returns
+  "… (Reference ABC123)" so a user's screenshot finds the log line.
+- **The guide is tested.** Changing a UI label or behaviour that /guide's tutorial mentions
+  means updating the guide AND scripts/e2e/tutorial.mjs, and re-running it.
 - Never read localStorage in render or a useState initializer (hydration mismatch).
 - `react-hooks` v7: no components defined inside components (use render functions), no refs
   read during render.

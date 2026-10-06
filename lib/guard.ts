@@ -40,3 +40,19 @@ export function cleanName(v: unknown): string | null {
     const s = v.trim().slice(0, 120);
     return s || null;
 }
+
+/**
+ * A short code shown to the person AND written next to the server log line,
+ * so "it said Reference K7Q2XD" finds the exact error in Vercel's logs
+ * without ever showing a stack trace or a column name to the user.
+ */
+export function errorRef(): string {
+    return Math.random().toString(36).slice(2, 8).toUpperCase().padEnd(6, "0");
+}
+
+/** Logs `err` under an UPPERCASE label with a reference code, returns a 500 the person can read. */
+export function serverError(label: string, err: unknown, message: string): NextResponse {
+    const ref = errorRef();
+    console.error(`${label} [ref ${ref}]:`, err);
+    return NextResponse.json({ error: `${message} (Reference ${ref})`, ref }, { status: 500 });
+}

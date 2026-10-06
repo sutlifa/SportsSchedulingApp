@@ -866,6 +866,7 @@ export function generate(league: League, previous: Match[], opts: GenerateOption
             if (r) tally.set(r, (tally.get(r) ?? 0) + 1);
         }
         const top = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3);
+        if (top.length) m.blockers = top.map(([reason, count]) => ({ reason, count }));
         m.note = top.length
             ? `No spot fits. Most common blockers: ${top.map(([r, n]) => `${r} (${n} ${n === 1 ? "time" : "times"})`).join("; ")}.`
             : "There are no time slots in the season to put it in.";

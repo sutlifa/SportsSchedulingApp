@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { downloadText, copyText, fileSafe } from "@/lib/client/backup";
 import { DAY_SHORT, dowOf, formatDate, formatTime, isIsoDate, isoToDay, weekKey } from "@/lib/engine/dates";
+import { adviceFor } from "@/lib/engine/advice";
 import { generate, type Verdict } from "@/lib/engine/engine";
 import { mapSearchUrl } from "@/lib/engine/sanitize";
-import type { Location, Match } from "@/lib/engine/types";
+import type { League, Location, Match } from "@/lib/engine/types";
 import MoveDialog from "./MoveDialog";
 import type { TabProps } from "./types";
 import { BracketChip, Modal } from "./ui";
@@ -190,6 +191,9 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                 {lastRun && (
                     <p className="w-full text-sm text-muted">
                         Placed {lastRun.placed} of {lastRun.needed} new matches (best of {lastRun.attempts} tries, {lastRun.seconds.toFixed(1)}s). Locked matches were kept as they were.
+                        {lastRun.placed < lastRun.needed && (
+                            <strong className="text-warn"> {lastRun.needed - lastRun.placed} couldn’t be placed: the reasons and fixes are listed below.</strong>
+                        )}
                     </p>
                 )}
                 {flash && <p className="w-full text-sm font-semibold text-ok">{flash}</p>}
@@ -218,6 +222,10 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
             {unplaced.length > 0 && (
                 <section className="grid gap-2">
                     <h3 className="font-display text-xl font-bold uppercase tracking-wide text-warn">Couldn’t place ({unplaced.length})</h3>
+                    <p className="text-sm text-muted">
+                        Every open time was checked for each of these. Below are the reasons that ruled out the most times, and what to change. After a fix, press
+                        Regenerate. Or place a match by hand, which locks it.
+                    </p>
                     {unplaced.map((m) => (
                         <div key={m.id} className="card flex flex-wrap items-start justify-between gap-3 border-warn/40 p-3">
                             <div className="min-w-0">
@@ -227,7 +235,33 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                                         {teamName(m.home)} vs {teamName(m.away)}
                                     </span>
                                 </div>
-                                {m.note && <p className="mt-1 text-sm text-muted">{m.note}</p>}
+                                {m.blockers?.length ? (
+                                    <ul className="mt-2 grid gap-2 text-sm">
+                                        {m.blockers.map((b) => {
+                                            const a = adviceFor(b.reason, data);
+                                            return (
+                                                <li key={b.reason} className="rounded-md bg-surface-2 px-3 py-2">
+                                                    <div>
+                                                        <strong>{b.reason}</strong>{" "}
+                                                        <span className="text-muted tabular">
+                                                            (ruled out {b.count} {b.count === 1 ? "time" : "times"})
+                                                        </span>
+                                                    </div>
+                                                    <div className="mt-0.5 text-muted">
+                                                        Fix: {a.tip}{" "}
+                                                        {a.tab && (
+                                                            <button className="font-semibold text-accent underline" onClick={() => goTo(a.tab!)}>
+                                                                Go to {a.tabLabel}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                ) : (
+                                    m.note && <p className="mt-1 text-sm text-muted">{m.note}</p>
+                                )}
                             </div>
                             <button className="btn-secondary btn-sm" onClick={() => setMoving(m.id)}>
                                 Place by hand
@@ -384,6 +418,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                         )}
                     </div>
                     <Issues v={v} />
+                    {v?.hard.length ? <FixHint reason={v.hard[0]} league={data} /> : null}
                 </div>
                 <div className="flex flex-wrap gap-1">
                     <button className="btn-ghost btn-sm" onClick={() => setMatch(m.id, { locked: !m.locked })} title={m.locked ? "Let regenerate move this match" : "Keep this match when regenerating"}>
@@ -474,6 +509,15 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
             </div>
         );
     }
+}
+
+/** A must-rule problem on a placed match: say how to fix it, not just what's wrong. */
+function FixHint({ reason, league }: { reason: string; league: League }) {
+    return (
+        <p className="mt-0.5 text-xs text-muted">
+            Fix: press Move (it lists the times that fit every rule), or: {adviceFor(reason, league).tip}
+        </p>
+    );
 }
 
 function Issues({ v }: { v: Verdict | undefined }) {

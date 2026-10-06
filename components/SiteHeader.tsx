@@ -22,6 +22,10 @@ export default async function SiteHeader() {
                     <span className="font-display text-2xl font-bold uppercase tracking-wide">Courtside</span>
                     <span className="hidden text-sm opacity-80 sm:inline">League scheduling</span>
                 </Link>
+                <div className="flex min-w-0 items-center gap-3">
+                <Link href="/guide" className="rounded-md px-2 py-1 text-sm font-semibold hover:bg-white/10">
+                    Guide
+                </Link>
                 {email && (
                     <form
                         action={async () => {
@@ -34,6 +38,7 @@ export default async function SiteHeader() {
                         <SignOutButton />
                     </form>
                 )}
+                </div>
             </div>
             {/* The baseline: a court line, in ball yellow. */}
             <div className="h-1 bg-ball" />

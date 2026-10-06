@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cleanName, isGuardFailure, readJson, requireUser } from "@/lib/guard";
+import { cleanName, isGuardFailure, readJson, requireUser, serverError } from "@/lib/guard";
 import { deleteLeague, getLeague, saveLeague } from "@/lib/leagues";
 import { sanitizeLeague, sanitizeSchedule } from "@/lib/engine/sanitize";
 
@@ -14,8 +14,7 @@ export async function GET(_req: Request, context: Ctx) {
         if (!rec) return NextResponse.json({ error: "That league doesn’t exist or was deleted." }, { status: 404 });
         return NextResponse.json({ league: rec });
     } catch (err) {
-        console.error("GET LEAGUE ERROR:", err);
-        return NextResponse.json({ error: "Couldn’t load the league. Try again in a moment." }, { status: 500 });
+        return serverError("GET LEAGUE ERROR", err, "Couldn’t load the league. Try again in a moment.");
     }
 }
 
@@ -45,8 +44,7 @@ export async function PUT(req: Request, context: Ctx) {
             { status: 409 }
         );
     } catch (err) {
-        console.error("SAVE LEAGUE ERROR:", err);
-        return NextResponse.json({ error: "Couldn’t save. Your changes are still on screen; we’ll keep trying." }, { status: 500 });
+        return serverError("SAVE LEAGUE ERROR", err, "Couldn’t save. Your changes are still on screen; we’ll keep trying.");
     }
 }
 
@@ -59,7 +57,6 @@ export async function DELETE(_req: Request, context: Ctx) {
         if (!ok) return NextResponse.json({ error: "That league doesn’t exist or was already deleted." }, { status: 404 });
         return NextResponse.json({ ok: true });
     } catch (err) {
-        console.error("DELETE LEAGUE ERROR:", err);
-        return NextResponse.json({ error: "Couldn’t delete the league. Try again in a moment." }, { status: 500 });
+        return serverError("DELETE LEAGUE ERROR", err, "Couldn’t delete the league. Try again in a moment.");
     }
 }

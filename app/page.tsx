@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import LeagueList from "@/components/LeagueList";
 import ModeNotice from "@/components/ModeNotice";
 import { isCloudConfigured, missingCloudConfig } from "@/lib/authConfig";
+import { errorRef } from "@/lib/guard";
 import { listLeagues, type LeagueSummary } from "@/lib/leagues";
 
 export default async function Home() {
@@ -24,8 +25,9 @@ export default async function Home() {
     try {
         leagues = await listLeagues(userId);
     } catch (err) {
-        console.error("HOME LIST LEAGUES ERROR:", err);
-        loadError = "Couldn’t reach the database just now. Reload the page in a moment.";
+        const ref = errorRef();
+        console.error(`HOME LIST LEAGUES ERROR [ref ${ref}]:`, err);
+        loadError = `Couldn’t reach the database just now, so your leagues can’t be listed. Reload in a minute. If it keeps happening, the database may be paused or over its usage limit; your backup copies below still work. (Reference ${ref})`;
     }
     return <LeagueList mode="cloud" initial={leagues} loadError={loadError} userKey={String(userId)} />;
 }
