@@ -88,8 +88,8 @@ npm install
 npm run dev            # http://localhost:3004, browser-only mode with zero setup
 ```
 
-To work offline, or when the hosted site is unavailable, run it locally. Then, on the home
-**New league** page, choose **A backup file** to open a backup downloaded from the hosted site.
+To work offline, or when the hosted site is unavailable, run it locally. Then open the
+**New league** page (`/new`) and choose **A backup file** to open a backup downloaded from the hosted site.
 
 ## Configuration (cloud mode)
 

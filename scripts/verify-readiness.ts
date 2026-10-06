@@ -66,6 +66,20 @@ assert(stepTitle("time", sampleLeague("soccer")) === "Field time", "soccer's tim
         "all-blackout season blocks",
     );
 }
+// Blackouts count only inside the season (Tester: a blackout overlapping the
+// first day, or a one-day tournament with an unrelated blackout, falsely
+// blocked with "Every day of the season is a blackout date").
+{
+    const l = clone(ex);
+    l.settings.blackouts = [{ from: "2027-02-01", to: "2027-03-07" }];
+    assert(!blocks(l, "x", "season").length, "blackout overlapping the season start doesn't block");
+    const one = clone(ex);
+    one.settings.seasonStart = one.settings.seasonEnd = "2027-03-13";
+    one.settings.blackouts = [{ from: "2027-04-03" }, { from: "2026-12-24", to: "2027-01-02" }];
+    assert(!readiness(one, "x").some((c) => /Every day/.test(c.text)), "one-day tournament with an unrelated blackout doesn't block");
+    one.settings.blackouts = [{ from: "2027-03-10", to: "2027-03-20" }];
+    assert(blocks(one, "x", "season").some((c) => /Every day/.test(c.text)), "one-day tournament inside a blackout blocks");
+}
 // A bracket whose window excludes every slot blocks on time, naming it.
 {
     const l = clone(ex);
@@ -155,6 +169,111 @@ assert(stepTitle("time", sampleLeague("soccer")) === "Field time", "soccer's tim
         "empty rule warns",
     );
     assert(!blocks(l, "x", "requests").length, "requests never block");
+}
+
+// Must-requests that leave a team too few dates block on Requests, naming
+// the team; the same in a bracket's own rules blocks on Brackets instead.
+// Either way Generate really does leave games unplaced.
+const unplaced = (l: League) => {
+    const r = generate(l, [], { scope: "all", seed: 1, maxAttempts: 5, timeBudgetMs: 1e9, now: () => 0 });
+    return r.needed - r.placed;
+};
+{
+    const l = clone(sampleLeague("tennis"));
+    const team = l.teams.find((x) => x.id === "t10b")!;
+    // 10U can't start after 5:30 PM, so the weekday 5 PM slots are its only
+    // Tue/Thu time; "only Wednesdays" leaves nothing at all.
+    team.rules = [{ id: "rq", mode: "must", type: "only_days", days: [3] }];
+    assert(
+        blocks(l, "x", "requests").some((c) => c.text === "Example Lightning 10U: its must-requests leave 0 dates it can play, but it needs 5 matches."),
+        `team must-requests leaving no dates block on requests (${blocks(l).map((c) => c.text).join(" | ")})`,
+    );
+    assert(unplaced(l) > 0, "…and Generate really leaves matches unplaced");
+    // Prefer never blocks.
+    team.rules = [{ id: "rq", mode: "prefer", type: "only_days", days: [3] }];
+    assert(!blocks(l, "x").length, "the same request as Prefer doesn't block");
+    // Three dates left (at one a day) for five matches.
+    team.rules = [{ id: "rq", mode: "must", type: "not_dates", ranges: [{ from: "2027-03-06", to: "2027-05-12" }] }];
+    assert(
+        blocks(l, "x", "requests").some((c) => /^Example Lightning 10U: its must-requests leave \d dates it can play, but it needs 5 matches\.$/.test(c.text)),
+        "team must-requests leaving too few dates block",
+    );
+    assert(unplaced(l) > 0, "…and Generate really leaves matches unplaced (dates)");
+
+    const b = clone(sampleLeague("hockey"));
+    b.brackets[0].rules = [{ id: "rb", mode: "must", type: "only_days", days: [3] }];
+    assert(
+        blocks(b, "x", "brackets").some((c) => c.text === "10U: its must-rules leave 0 dates its teams can play, but a team needs 5 games."),
+        `bracket must-rules leaving no dates block on brackets (${blocks(b).map((c) => c.text).join(" | ")})`,
+    );
+    assert(!blocks(b, "x", "requests").length, "…and its teams don't repeat it on requests");
+}
+// "At least n days between" needs (target − 1)·n + 1 days.
+{
+    const l = clone(sampleLeague("soccer"));
+    const team = l.teams.find((x) => x.id === "t14b")!;
+    team.rules = [{ id: "rg", mode: "must", type: "min_days_between", n: 20 }];
+    assert(
+        blocks(l, "x", "requests").some((c) => c.text.startsWith("Example Lightning 14U: “At least 20 days between games” leaves room for only") && c.text.endsWith("but it needs 5.")),
+        `days-between too long blocks on requests, naming the team (${blocks(l).map((c) => c.text).join(" | ")})`,
+    );
+    assert(unplaced(l) > 0, "…and Generate really leaves games unplaced (gap)");
+    team.rules = [{ id: "rg", mode: "must", type: "min_days_between", n: 14 }];
+    assert(!blocks(l, "x").length, "a gap that fits (14 days × 4 + 1 ≤ the season) doesn't block");
+    const b = clone(sampleLeague("soccer"));
+    b.brackets[3].rules = [{ id: "rg", mode: "must", type: "min_days_between", n: 30 }];
+    assert(
+        blocks(b, "x", "brackets").some((c) => c.text.startsWith("18U: “At least 30 days between games” leaves room for only")),
+        "a bracket's own days-between blocks on brackets",
+    );
+}
+// A time with fewer free units than one game uses holds no games: warn,
+// naming the facility; when that's every time, block on Season, where the
+// setting is, instead of the misleading "None of the time falls inside".
+{
+    const l = clone(sampleLeague("tennis"));
+    l.settings.courtsPerMatch = 3;
+    const w = readiness(l, "x").filter((c) => c.step === "time" && c.level === "warn");
+    assert(
+        w.some((c) => c.text === "Example Park Courts has 2 courts free at some times, but a match uses 3, so those times hold no matches."),
+        `short time warns, naming the facility (${w.map((c) => c.text).join(" | ")})`,
+    );
+    const all = clone(sampleLeague("tennis"));
+    all.settings.courtsPerMatch = 4;
+    assert(
+        blocks(all, "x", "season").some((c) => c.text === "A match uses 4 courts, but no time has more than 3 free. Lower “Courts used by one match”, or free more courts."),
+        `units per game over every time blocks on season (${blocks(all).map((c) => c.text).join(" | ")})`,
+    );
+    assert(!readiness(all, "x").some((c) => /falls inside the season/.test(c.text)), "…without the misleading “falls inside the season” block");
+    assert(firstOpenStep(readiness(all, "x")) === "season", "…and the wizard opens on Season");
+    // Uploads count their courts the same way.
+    const up = clone(sampleLeague("tennis"));
+    up.settings.courtsPerMatch = 2;
+    up.availability = [{ id: "a1", locationId: "loc-center", date: "2027-03-06", time: "08:00", courts: 1, unitIds: [], bracketIds: [] }];
+    assert(
+        readiness(up, "x").some((c) => c.level === "warn" && c.text.startsWith("Example Tennis Center has 1 court free at some times")),
+        `a one-court upload warns (${readiness(up, "x").map((c) => c.text).join(" | ")})`,
+    );
+}
+// A team wanting more games than the rest of its pool plays blocks on
+// Teams, and the "odd total" note (wrong cause) is left out; the engine's
+// own warning names the real cause too.
+{
+    const l = clone(sampleLeague("tennis"));
+    const team = l.teams.find((x) => x.id === "t10a")!;
+    team.matches = 16;
+    team.rules = [];
+    assert(
+        blocks(l, "x", "teams").some((c) => c.text === "Example Hawks 10U wants 16 matches but the rest of its pool has only 15 to give."),
+        `greedy team blocks on teams (${blocks(l).map((c) => c.text).join(" | ")})`,
+    );
+    assert(!readiness(l, "x").some((c) => /odd total/.test(c.text)), "…and no false “odd total” note");
+    const r = generate(l, [], { scope: "all", seed: 1, maxAttempts: 5, timeBudgetMs: 1e9, now: () => 0 });
+    assert(
+        r.warnings.some((x) => /^Example Hawks 10U gets \d+ of 16 matches: the rest of 10U has only 15 to give/.test(x)),
+        `engine names the real cause (${r.warnings.join(" | ")})`,
+    );
+    assert(!r.warnings.some((x) => /odd total/.test(x)), "…not an odd total");
 }
 
 console.log(`verify-readiness: ${checks} checks passed`);

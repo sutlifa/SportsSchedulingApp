@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Item = { href: string; label: string; primary?: boolean };
 
@@ -52,13 +52,25 @@ const MENU: { heading: string; items: Item[] }[] = [
 export default function HeaderNav({ account, accountMenu }: { account: React.ReactNode; accountMenu: React.ReactNode }) {
     const path = usePathname();
     const [open, setOpen] = useState(false);
+    const menu = useRef<HTMLDivElement>(null);
+    const toggle = useRef<HTMLButtonElement>(null);
 
-    // Escape closes the menu, as people expect of anything that pops open.
+    // Escape, or a tap anywhere outside, closes the menu, as people expect of
+    // anything that pops open. The Menu button is left out of "outside": its
+    // own click toggles, and closing here too would reopen it at once.
     useEffect(() => {
         if (!open) return;
         const key = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+        const tap = (e: PointerEvent) => {
+            const at = e.target as Node | null;
+            if (at && !menu.current?.contains(at) && !toggle.current?.contains(at)) setOpen(false);
+        };
         window.addEventListener("keydown", key);
-        return () => window.removeEventListener("keydown", key);
+        document.addEventListener("pointerdown", tap);
+        return () => {
+            window.removeEventListener("keydown", key);
+            document.removeEventListener("pointerdown", tap);
+        };
     }, [open]);
 
     // Hash links count as "here" only by their path, so Guide lights up on
@@ -87,6 +99,7 @@ export default function HeaderNav({ account, accountMenu }: { account: React.Rea
             </nav>
 
             <button
+                ref={toggle}
                 className="rounded-md border border-white/40 px-3 py-1.5 text-sm font-semibold hover:bg-white/10 md:hidden"
                 aria-expanded={open}
                 aria-controls="site-menu"
@@ -99,7 +112,7 @@ export default function HeaderNav({ account, accountMenu }: { account: React.Rea
             </button>
 
             {open && (
-                <div id="site-menu" className="absolute inset-x-0 top-full z-50 border-b border-border bg-surface text-fg shadow-lg md:hidden">
+                <div ref={menu} id="site-menu" className="absolute inset-x-0 top-full z-50 border-b border-border bg-surface text-fg shadow-lg md:hidden">
                     <nav aria-label="Site menu" className="mx-auto grid max-w-6xl gap-4 px-4 py-4">
                         {MENU.map((g) => (
                             <div key={g.heading}>

@@ -13,22 +13,60 @@ export function uid(prefix: string): string {
 
 export const BRACKET_COLORS = ["#2f7fb8", "#c2571a", "#3e8e5a", "#8a4fb0", "#b8326b", "#6b7a1f", "#1f8a8a", "#7a5a2f"];
 
+/** Open modals, innermost last: only the top one answers Tab and Escape. */
+const openModals: HTMLElement[] = [];
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
     const ref = useRef<HTMLDivElement>(null);
+    // Callers pass an inline onClose, a new function every render. Keyed on
+    // it, the effect below re-ran on every keystroke in the dialog: focus
+    // bounced to the opener and back to the first field. So the latest
+    // onClose lives in a ref and the effect runs once per opening.
+    const closeRef = useRef(onClose);
     useEffect(() => {
+        closeRef.current = onClose;
+    }, [onClose]);
+    useEffect(() => {
+        const box = ref.current;
+        if (!box) return;
         const prev = document.activeElement as HTMLElement | null;
-        ref.current?.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
+        openModals.push(box);
+        box.querySelector<HTMLElement>("input, select, textarea, button")?.focus();
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") onClose();
+            if (openModals[openModals.length - 1] !== box) return;
+            if (e.key === "Escape") closeRef.current();
+            if (e.key !== "Tab") return;
+            // Keep Tab inside the dialog. Without this a keyboard user tabbed
+            // out to the page behind it -- in the setup wizard, to Next,
+            // which moved the step and threw away the half-filled dialog.
+            const items = [...box.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => el.getClientRects().length > 0);
+            if (!items.length) {
+                e.preventDefault();
+                return;
+            }
+            const first = items[0];
+            const last = items[items.length - 1];
+            const at = document.activeElement;
+            if (e.shiftKey && (at === first || !box.contains(at))) {
+                e.preventDefault();
+                last.focus();
+            } else if (!e.shiftKey && (at === last || !box.contains(at))) {
+                e.preventDefault();
+                first.focus();
+            }
         };
         document.addEventListener("keydown", onKey);
         document.body.style.overflow = "hidden";
         return () => {
             document.removeEventListener("keydown", onKey);
-            document.body.style.overflow = "";
-            prev?.focus?.();
+            openModals.splice(openModals.indexOf(box), 1);
+            if (!openModals.length) document.body.style.overflow = "";
+            // Back to whatever opened it, so the keyboard user carries on
+            // from the same place.
+            if (prev?.isConnected) prev.focus();
         };
-    }, [onClose]);
+    }, []);
     return (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-3 sm:p-8" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
             <div ref={ref} role="dialog" aria-modal="true" aria-label={title} className={`card w-full ${wide ? "max-w-3xl" : "max-w-xl"} shadow-xl`}>

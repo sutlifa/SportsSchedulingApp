@@ -192,6 +192,19 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
     assert(r.warnings.some((w) => w.includes("odd total")), "odd pool total produces a warning");
     checkInvariants(league, r.matches, "odd pool");
 }
+// One team wanting more than the rest of its pool plays is named as that,
+// not as an "odd total" (the total here, 8 + 3 × 2 = 14, is even).
+{
+    const league = sampleLeague();
+    for (const t of league.teams) if (t.bracketId === "b10") t.matches = t.id === "t10b" ? 8 : 2;
+    const r = fixedRun(league);
+    assert(
+        r.warnings.some((w) => /^Example Lightning 10U gets \d+ of 8 matches: the rest of 10U has only 6 to give/.test(w)),
+        `over-asking team names the real cause: ${r.warnings.join(" | ")}`
+    );
+    assert(!r.warnings.some((w) => w.includes("odd total")), "…and no odd-total warning for an even total");
+    checkInvariants(league, r.matches, "over-asking team");
+}
 
 // --- infeasible: too little court time ---------------------------------------
 {

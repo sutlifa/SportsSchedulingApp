@@ -55,8 +55,12 @@ lib/engine/       PURE, shared by client, API and scripts. Imports use .ts exten
   readiness.ts    "can this league be scheduled?" per setup step: block / warn / info.
                   ONE source for the setup wizard (blocks disable Next) and the Schedule
                   tab's "Before you schedule". Checks real usable time per bracket (start
-                  window, days, "Open to"), spots vs games, dates vs games per team, pools
-                  of one. scripts/verify-readiness.ts: a league with no blocks must schedule
+                  window, days, "Open to"), spots vs games, dates vs games per team, must-
+                  rules/requests leaving too few dates (or too little room for "days
+                  between"), units per game vs free units, pools of one, a team wanting
+                  more than the rest of its pool plays. Every block must be a PROOF that
+                  Generate can't place everything (a false block traps people mid-setup).
+                  scripts/verify-readiness.ts: a league with no blocks must schedule
 lib/import/       facility availability sheets → dated court availability (pure)
   xlsx.ts         dependency-free .xlsx reader (zip via DecompressionStream; merged
                   cells filled; date-formatted numbers returned as {serial})

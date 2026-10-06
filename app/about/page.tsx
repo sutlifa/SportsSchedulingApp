@@ -55,11 +55,11 @@ export default function AboutPage() {
                 <Link href="/guide" className="font-semibold text-accent underline">
                     guide
                 </Link>{" "}
-                walks through building a complete league step by step in the sport you choose, with a sample facility spreadsheet. Or go to{" "}
-                <Link href="/" className="font-semibold text-accent underline">
-                    your leagues
+                walks through building a complete league step by step in the sport you choose, with a sample facility spreadsheet. Or start a{" "}
+                <Link href="/new" className="font-semibold text-accent underline">
+                    new league
                 </Link>{" "}
-                and start from the example league.
+                from the example league.
             </p>
             <p className="text-sm text-muted">
                 Questions about your data? See{" "}

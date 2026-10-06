@@ -25,7 +25,7 @@ export function locationLink(l: Location | undefined): string | null {
 /** Where each readiness step is edited outside the wizard. */
 const TAB_FOR_STEP: Record<StepId, Tab> = { basics: "season", season: "season", brackets: "brackets", facilities: "courts", time: "courts", teams: "teams", requests: "teams", review: "schedule" };
 
-export default function ScheduleTab({ doc, change, result, lookup, goTo, t: terms }: TabProps) {
+export default function ScheduleTab({ doc, change, result, lookup, goTo, t: terms, setup = false }: TabProps & { setup?: boolean }) {
     const w = (text: string) => sportText(text, terms);
     const { data, schedule } = doc;
     const [scope, setScope] = useState("all");
@@ -153,7 +153,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo, t: term
 
     return (
         <div className="grid gap-6">
-            {todo.length > 0 && (
+            {todo.length > 0 && !setup && (
                 <section className="card p-5">
                     <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Before you schedule</h2>
                     <ol className="mt-3 grid gap-2">

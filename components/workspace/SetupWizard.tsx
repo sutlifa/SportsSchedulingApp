@@ -9,6 +9,7 @@ import ScheduleTab from "./ScheduleTab";
 import SeasonTab from "./SeasonTab";
 import TeamsTab from "./TeamsTab";
 import type { Tab, TabProps } from "./types";
+import { useRef } from "react";
 import { Field } from "./ui";
 
 /** Where a tab's "Go there" link lands while the wizard is open. */
@@ -48,9 +49,16 @@ export default function SetupWizard({
     const here = checks.filter((c) => c.step === step);
     const blocked = here.some((c) => c.level === "block");
     const blocksAnywhere = checks.filter((c) => c.level === "block");
+    const heading = useRef<HTMLHeadingElement>(null);
     const go = (s: StepId) => {
         setStep(s);
         window.scrollTo({ top: 0 });
+        // The button that was pressed (Next, Back, a step) may be gone or
+        // meaningless on the new step, and focus fell to <body>: a keyboard
+        // or screen-reader user had to Tab from the top of the page to find
+        // where they were. The heading stays mounted across steps (only its
+        // text changes), so focusing it now still lands on the new step.
+        heading.current?.focus({ preventScroll: true });
     };
     // Links inside a tab ("Add brackets", an unplaced game's "Go there") move
     // between steps instead of tabs while the wizard is open.
@@ -70,15 +78,22 @@ export default function SetupWizard({
     };
 
     return (
-        <div className="grid gap-6">
-            <section className="card p-4" aria-label="Setup steps">
+        // minmax(0,1fr), not the default auto column: an auto grid track grows
+        // to its widest child, and the step list below is ~960px wide, so on
+        // phones the whole page scrolled sideways instead of the list
+        // scrolling inside its card.
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
+            <section className="card min-w-0 p-4" aria-label="Setup steps">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Set up your league</h2>
                     <span className="text-sm text-muted">
                         Step {index + 1} of {SETUP_STEPS.length}
                     </span>
                 </div>
-                <ol className="mt-3 flex gap-1 overflow-x-auto pb-1">
+                {/* relative: each step's sr-only status is position:absolute, and an
+                    absolute box escapes a scroller that isn't its containing block --
+                    the last steps' labels sat ~850px out and widened the page. */}
+                <ol className="relative mt-3 flex gap-1 overflow-x-auto pb-1">
                     {SETUP_STEPS.map((s, i) => {
                         // Ticked only when this step AND every one before it is
                         // clear: "Requests ✓" next to an empty league read as done.
@@ -107,7 +122,7 @@ export default function SetupWizard({
             </section>
 
             <section>
-                <h2 className="font-display text-3xl font-bold uppercase tracking-wide">
+                <h2 ref={heading} tabIndex={-1} className="font-display text-3xl font-bold uppercase tracking-wide focus:outline-none">
                     {index + 1}. {stepTitle(step, doc.data)}
                 </h2>
                 <p className="mt-1 max-w-3xl text-muted">{intro[step]}</p>
@@ -201,7 +216,10 @@ export default function SetupWizard({
                             </p>
                         )}
                     </section>
-                    <ScheduleTab {...inner} />
+                    {/* setup: the card above already lists what's missing, with links
+                        to the wizard's steps; the tab's own "Before you schedule" list
+                        repeated it, with links aimed at the editor's tabs. */}
+                    <ScheduleTab {...inner} setup />
                 </>
             )}
 

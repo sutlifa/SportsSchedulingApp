@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { downloadText, fileSafe, makeBackup } from "@/lib/client/backup";
+import { termsFor } from "@/lib/engine/sports";
 import { browserLeagues, browserStore, readMirrors, storeFor, type LeagueSummary, type Mirror, type Mode } from "@/lib/client/store";
 
 export default function LeagueList({ mode, initial, loadError, userKey = "" }: { mode: Mode; initial: LeagueSummary[] | null; loadError: string | null; userKey?: string }) {
@@ -105,7 +106,7 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                                         <span className="font-semibold">{m.name}</span>
                                         <span className="block text-xs text-muted">
                                             Copied {new Date(m.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ·{" "}
-                                            {m.data.teams.length} teams · {m.schedule.matches.length} matches
+                                            {m.data.teams.length} teams · {m.schedule.matches.length} {termsFor(m.data.settings?.sport).matches}
                                         </span>
                                     </span>
                                     <span className="flex flex-wrap gap-2">
@@ -165,7 +166,9 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                             </div>
                             <div className="flex flex-wrap gap-2 text-sm tabular">
                                 <span className="chip bg-surface-2">{l.teamCount} teams</span>
-                                <span className="chip bg-surface-2">{l.matchCount} matches</span>
+                                {/* "games", not "matches": the summary doesn't carry the sport, and
+                                    "games" reads right for every sport (a tennis match is a game too). */}
+                                <span className="chip bg-surface-2">{l.matchCount} games</span>
                                 {l.unplacedCount > 0 && <span className="chip bg-warn-soft text-warn">{l.unplacedCount} not placed</span>}
                             </div>
                         </Link>

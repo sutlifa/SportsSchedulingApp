@@ -333,6 +333,34 @@ async function walk(sport, t) {
         ok(bkDl.suggestedFilename() === `${leagueName.replace(/\s+/g, "-")}-backup.json`, `backup name ${bkDl.suggestedFilename()}`);
         const backup = JSON.parse(readFileSync(await bkDl.path(), "utf8"));
 
+        // --- the wizard at phone width ----------------------------------------
+        // Its step list is ~960px wide and once pushed the whole page sideways
+        // (Next half off-screen). Checked on the finished league, so every
+        // step has its fullest content, and with a dialog open.
+        STEP("wizard at 390px");
+        await page.getByRole("button", { name: "Setup guide" }).click();
+        await page.setViewportSize({ width: 390, height: 800 });
+        const fits = async (what) => {
+            const w = await page.evaluate(() => document.documentElement.scrollWidth);
+            ok(w === 390, `${what}: no sideways scroll at 390px (scrollWidth ${w})`);
+        };
+        for (const title of ["Name & sport", "Season", "Brackets & pools", "Facilities", Time, "Teams", "Requests", "Review & schedule"]) {
+            await stepper(title);
+            await see(new RegExp(`^\\d\\. ${title.replace(/[&]/g, "\\$&")}$`));
+            await fits(title);
+            const box = await page.getByRole("navigation", { name: "Setup navigation" }).locator(".btn-primary").boundingBox();
+            ok(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 800, `${title}: the Next/Finish button is fully on screen`);
+            if (title === "Brackets & pools") {
+                await page.getByRole("button", { name: "Add bracket" }).click();
+                await dialog().waitFor();
+                await fits("New bracket dialog");
+                await page.keyboard.press("Escape");
+                ok((await dialog().count()) === 0, "Escape closes the dialog");
+            }
+        }
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.getByRole("button", { name: "Exit setup" }).click();
+
         // --- independent re-check of the finished league -------------------------
         STEP("verify the finished schedule");
         const { data, schedule } = backup;

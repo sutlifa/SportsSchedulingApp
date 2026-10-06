@@ -781,6 +781,11 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                     <ErrTable
                         rows={[
                             [`X gets 4 of 5 ${t.matches}: … has an odd total`, `Teams × ${t.matches} in a pool is odd, so one ${t.match} can’t be paired.`, `Add or remove a team, or give one team one ${t.match} more or fewer.`],
+                            [
+                                `X gets 6 of 8 ${t.matches}: the rest of … has only 6 to give`,
+                                `Every ${t.match} needs an opponent from the same pool, and X wants more ${t.matches} than the rest of its pool plays in total.`,
+                                `Add a team to the pool, or give X fewer ${t.matches} (Teams).`,
+                            ],
                             ["X is the only team in 10U · Pool B", "A pool of one has nobody to play.", "Move the team to another pool, or add a team to its pool (Teams)."],
                             ["X isn’t in an age bracket", "Its bracket was deleted.", "Edit the team and choose a bracket."],
                             ["There are no open time slots in the season", "Season dates or slots are missing.", `Set the season dates and add weekly ${t.time}.`],

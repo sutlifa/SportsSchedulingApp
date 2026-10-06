@@ -136,7 +136,14 @@ export function makeLookup(league: League): NameLookup {
     return { team: (id) => t.get(id), location: (id) => l.get(id), unit: (id) => u.get(id), terms: termsFor(league.settings.sport) };
 }
 
-function compileStatic(rule: Rule, liveLocations: Set<string>): ((inst: Instance) => boolean) | null {
+/**
+ * A rule that depends only on WHEN and WHERE (days, dates, start times,
+ * locations) as a test on one time, or null for rules that depend on the
+ * team's other games. Exported so readiness.ts asks "can this team play
+ * here?" with exactly the test the generator uses, instead of a copy that
+ * could drift from it and pass a league the generator then can't schedule.
+ */
+export function compileStatic(rule: Rule, liveLocations: Set<string>): ((inst: Instance) => boolean) | null {
     switch (rule.type) {
         case "no_days": {
             const s = new Set<number>(rule.days);
@@ -809,12 +816,22 @@ export function generate(league: League, previous: Match[], opts: GenerateOption
                 got.set(a, (got.get(a) ?? 0) + 1);
                 got.set(b, (got.get(b) ?? 0) + 1);
             }
+            const poolNeed = ids.reduce((s, x) => s + (need.get(x) ?? 0), 0);
             for (const id of ids) {
                 const n = need.get(id) ?? 0;
                 if ((got.get(id) ?? 0) < n) {
                     const tc = ctx.teams.get(id)!;
+                    const gets = `${tc.team.name} gets ${tc.target - n + (got.get(id) ?? 0)} of ${tc.target} ${ctx.terms.matches}`;
+                    // Every game this team plays is one another pool member
+                    // plays too, so it can never get more than the rest of the
+                    // pool plays in total. That case used to be reported as an
+                    // "odd total" -- wrong whenever the total was even, and
+                    // pointing at the wrong fix either way.
+                    const rest = poolNeed - n;
                     shortfalls.push(
-                        `${tc.team.name} gets ${tc.target - n + (got.get(id) ?? 0)} of ${tc.target} ${ctx.terms.matches}: ${poolName} has an odd total, so one team must come up one short (or add a team).`
+                        n > rest
+                            ? `${gets}: the rest of ${poolName} has only ${rest} to give (add a team, or give it fewer).`
+                            : `${gets}: ${poolName} has an odd total, so one team must come up one short (or add a team).`
                     );
                 }
             }

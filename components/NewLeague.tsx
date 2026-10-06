@@ -48,7 +48,10 @@ export default function NewLeague({ mode }: { mode: Mode }) {
                     rec = await store.create(name.trim(), emptyLeague(sport));
                 }
             }
-            router.push(start === "blank" ? `/league/${rec.id}?setup=1` : `/league/${rec.id}`);
+            // replace, not push: /new has done its job once the league exists.
+            // With push, Back from the new league landed on /new again, and
+            // pressing Start there made a duplicate league.
+            router.replace(start === "blank" ? `/league/${rec.id}?setup=1` : `/league/${rec.id}`);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Couldn’t create the league.");
             setBusy(false);
