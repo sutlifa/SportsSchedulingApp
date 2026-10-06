@@ -66,29 +66,41 @@ async function walk(sport, t) {
         checks++;
     };
     const tab = (name) => page.getByRole("button", { name, exact: true }).click();
+    // The setup wizard: its Next button, and its step list (whose buttons also
+    // carry a number/tick and a screen-reader status, hence the regex).
+    const next = (title) => page.getByRole("button", { name: `Next: ${title}`, exact: true });
+    const goNext = async (title) => {
+        ok(await next(title).isEnabled(), `Next: ${title} is enabled`);
+        await next(title).click();
+    };
+    const stepper = (title) => page.getByLabel("Setup steps").getByRole("button", { name: new RegExp(title.replace(/[&]/g, "\\$&")) }).click();
+    const Time = cap(t.time);
     const dialog = () => page.getByRole("dialog");
 
     try {
         // --- 1 -----------------------------------------------------------------
         STEP("1 create the league");
-        await page.goto(`${BASE}/new`);
+        await page.goto(BASE);
+        await page.getByRole("navigation", { name: "Site" }).getByRole("link", { name: "New league" }).click();
+        await page.waitForURL(/\/new$/);
         await page.locator("#league-name").fill(leagueName);
         await page.locator("#league-sport").selectOption(sport);
         await page.getByText("Guided setup", { exact: true }).click();
         await page.getByRole("button", { name: "Start guided setup" }).click();
-        await page.waitForURL(/\/league\//);
-        // A blank league opens the setup wizard; the tutorial runs in the tabs.
-        await page.getByRole("button", { name: "Exit setup" }).click();
-        await page.locator("#season-start").waitFor();
-        ok(await page.locator("#season-start").isVisible(), "opens on the Season tab");
-        ok((await page.locator("#match-minutes").inputValue()) === String(t.minutes), `${t.match} length defaults to ${t.minutes} for ${t.name}`);
+        await page.waitForURL(/\/league\/.*setup=1/);
+        await see("1. Name & sport");
+        await see("Step 1 of 8");
         await see(t.name, { exact: true });
-        await tab("Schedule");
-        await see("Before you schedule");
+        ok((await page.locator("#setup-sport").inputValue()) === sport, "sport carried into the wizard");
+        await see(`This league talks about ${t.units} (${u(0)}, ${u(1)}), ${t.time}, ${t.matches} and ${t.captains}.`, { exact: false });
+        await goNext("Season");
 
         // --- 2 -----------------------------------------------------------------
         STEP("2 season dates");
-        await tab("Season");
+        ok((await page.locator("#match-minutes").inputValue()) === String(t.minutes), `${t.match} length defaults to ${t.minutes} for ${t.name}`);
+        await see("Set the season’s first and last day.");
+        ok(await next("Brackets & pools").isDisabled(), "Next is disabled until the dates are set");
+        ok((await page.locator("#league-sport-edit").count()) === 0, "no sport/name/backup on the setup Season step");
         await page.locator("#season-start").fill("2027-03-06");
         await page.locator("#season-end").fill("2027-05-16");
         await page.locator("#blackout-from").fill("2027-03-27");
@@ -98,10 +110,11 @@ async function walk(sport, t) {
         await see("Sat, Mar 6, 2027 to Sun, May 16, 2027, about 11 weeks.");
         await see("Sat, Mar 27 – Sun, Mar 28");
         await see(`${cap(t.units)} used by one ${t.match}`);
+        ok((await page.getByText("Set the season’s first and last day.").count()) === 0, "the Needed line is gone");
+        await goNext("Brackets & pools");
 
         // --- 3 -----------------------------------------------------------------
         STEP("3 brackets");
-        await tab("Brackets & pools");
         for (const [name, latest] of [["10U", "17:30"], ["12U", "18:30"], ["14U", ""]]) {
             await page.getByRole("button", { name: "Add bracket" }).click();
             await page.locator("#br-name").fill(name);
@@ -111,10 +124,11 @@ async function walk(sport, t) {
         }
         await see(`5 guaranteed ${t.matches} per team · starts until 5:30 PM`);
         ok((await page.getByText("No teams yet.").count()) === 3, "three empty bracket cards");
+        await goNext("Facilities");
 
         // --- 4 -----------------------------------------------------------------
         STEP("4 facilities and units");
-        await tab(facTab);
+        ok((await page.getByRole("heading", { name: "Weekly" , exact: false }).count()) === 0, "the facilities step shows facilities only");
         for (const [name, n] of [[fac1, 3], [fac2, 2]]) {
             await page.getByRole("button", { name: "Add facility" }).click();
             await page.locator("#loc-name").fill(name);
@@ -126,6 +140,7 @@ async function walk(sport, t) {
         await see(`3 ${t.units}: ${u(0)}, ${u(1)}, ${u(2)}`);
         await see(`2 ${t.units}: ${u(0)}, ${u(1)}`);
         ok((await page.getByRole("link", { name: "Find on Google Maps" }).count()) === 2, "two map links");
+        await goNext(Time);
 
         // --- 5 -----------------------------------------------------------------
         STEP("5 weekly time");
@@ -166,13 +181,15 @@ async function walk(sport, t) {
         ok((await dialog().getByRole("cell", { name: `${u(0)}, ${u(1)}, ${u(2)}`, exact: true }).count()) >= 1, "unit names shown per time");
         await page.getByRole("button", { name: "Import 12 time slots" }).click();
         await see(`Imported 12 ${t.time} slots on 5 dates from ${file}.xlsx.`);
-        await see(`3 ${t.units}: ${u(0)}, ${u(1)}, ${u(2)}`); // no new units added
         await page.getByRole("button", { name: "Show dates" }).click();
         await see(`11:00 AM · ${u(0)}, ${u(1)}`);
+        await stepper("Facilities");
+        await see(`3 ${t.units}: ${u(0)}, ${u(1)}, ${u(2)}`); // no new units added
+        await goNext(Time);
+        await goNext("Teams");
 
         // --- 7 -----------------------------------------------------------------
         STEP("7 teams");
-        await tab("Teams");
         for (const [bracket, text, n] of [["10U", list("TEAMS_10U"), 4], ["12U", list("TEAMS_12U"), 8], ["14U", list("TEAMS_14U"), 6]]) {
             await page.getByRole("button", { name: "Paste a list instead" }).click();
             await page.locator("#bulk-bracket").selectOption({ label: bracket });
@@ -182,14 +199,16 @@ async function walk(sport, t) {
         await see("Teams (18)", { exact: false });
         await see("Pool A · 4 teams");
         await see("Pool B · 4 teams");
-        await tab("Brackets & pools");
+        await stepper("Brackets & pools");
         ok((await page.getByText(/Some opponents will be played twice \(only 3 to choose from\)/).count()) === 3, "10U + two 12U pools repeat opponents");
+        await stepper("Teams");
+        await goNext("Requests");
 
         // --- 8 -----------------------------------------------------------------
         STEP("8 requests");
-        await tab("Teams");
+        ok((await page.locator("#new-team-name").count()) === 0, "no add-team form on the Requests step");
         const editTeam = async (name) => {
-            await page.locator("li").filter({ has: page.getByText(name, { exact: true }) }).getByRole("button", { name: "Edit" }).click();
+            await page.locator("li").filter({ has: page.getByText(name, { exact: true }) }).getByRole("button", { name: "Add requests" }).click();
             await dialog().waitFor();
         };
         const addRule = async (type) => {
@@ -225,10 +244,13 @@ async function walk(sport, t) {
         await see("Not at the same time as Oak Hill Thunder 14U");
         await see("Unavailable Sat, Apr 10 – Sun, Apr 11");
         await see("Prefers: Not on Tuesdays");
+        await see("5 of 18 teams have requests.", { exact: false });
+        await goNext("Review & schedule");
 
         // --- 9 -----------------------------------------------------------------
         STEP("9 generate");
-        await tab("Schedule");
+        await see("Ready to schedule");
+        ok((await page.getByText("Before you schedule").count()) === 0, "nothing blocking");
         await page.getByRole("button", { name: "Generate schedule" }).click();
         await see(`${cap(t.matches)} placed`);
         const stats = async () => (await page.locator("section.grid.grid-cols-2").innerText()).replace(/\s+/g, " ");
@@ -236,6 +258,14 @@ async function walk(sport, t) {
         ok(new RegExp(`${t.matches} PLACED 45 of 45`, "i").test(s) && /NOT PLACED 0/i.test(s) && /BREAK A MUST-RULE 0/i.test(s) && /TEAMS SHORT 0/i.test(s), `stats: ${s}`);
         await see("everyone’s covered");
         ok((await page.getByText(new RegExp(`^ · (${u(0)}|${u(1)}|${u(2)})$`)).count()) > 0, `games name their ${t.unit}`);
+        await page.getByRole("button", { name: "Finish setup" }).click();
+        await page.getByRole("navigation", { name: "League sections" }).waitFor();
+        ok(!page.url().includes("setup="), "finishing setup drops ?setup=1");
+        ok((await page.getByRole("button", { name: "Schedule", exact: true }).getAttribute("aria-current")) === "page", "opens on the Schedule tab");
+        for (const x of ["Teams", "Brackets & pools", facTab, "Season"]) ok((await page.getByRole("button", { name: x, exact: true }).count()) === 1, `${x} tab`);
+        ok((await page.getByRole("button", { name: "Setup guide" }).count()) === 1, "Setup guide button");
+        s = await stats();
+        ok(new RegExp(`${t.matches} PLACED 45 of 45`, "i").test(s), `still 45 of 45 after finishing: ${s}`);
         await page.getByRole("button", { name: `${cap(t.unit)} use` }).click();
         const apr10 = await page.locator(".card", { hasText: "Sat, Apr 10" }).first().innerText();
         ok(!new RegExp(`(11:00 AM|1:00 PM|3:00 PM) · ${short1}`).test(apr10), `Apr 10 at ${short1}: only 9:00 (sheet)`);

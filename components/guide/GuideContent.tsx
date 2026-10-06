@@ -170,6 +170,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
     const Unit = cap(t.unit);
     const Matches = cap(t.matches);
     const tab = `Facilities & ${t.time}`;
+    const Time = cap(t.time);
     const file = `${sport}-april-2027`;
     const u = (i: number) => t.unitLabel(i);
 
@@ -227,7 +228,9 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                     <H2 id="how-it-works">How it works</H2>
                     <p className="max-w-3xl">
                         A <strong>league</strong> is one season or one tournament, in one sport. You describe it once and {APP_NAME} does the pairing and the
-                        timetabling. Each part has its own tab inside the league:
+                        timetabling. A new league starts in <strong>guided setup</strong>: eight steps (name & sport, season, brackets & pools, facilities,{" "}
+                        {t.time}, teams, requests, review & schedule), each checked as you go, so that by the end everything a full schedule needs is in place.
+                        After that, each part has its own tab inside the league:
                     </p>
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {(
@@ -289,28 +292,34 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                     <Step n={1} id="t-create" title="Create the league">
                         <ol>
                             <li>
-                                Go to <Link href="/" className="font-semibold text-accent underline">Your leagues</Link>.
+                                Press <B>New league</B> in the top bar (on a phone: <B>Menu</B> → <B>New league or tournament</B>).
                             </li>
                             <li>
-                                Under <B>New league</B>, type the name <strong>Spring 2027 Youth {t.name}</strong>.
+                                Type the name <strong>Spring 2027 Youth {t.name}</strong>.
                             </li>
                             <li>
                                 Set <B>Sport</B> to <strong>{t.name}</strong>.
                             </li>
                             <li>
-                                Leave <B>A blank league</B> selected and press <B>Create league</B>.
+                                Leave <B>Guided setup</B> selected and press <B>Start guided setup</B>.
                             </li>
                         </ol>
                         <Expect>
-                            the league opens on its <B>Season</B> tab, with a <strong>{t.name}</strong> label next to its name. On the <B>Schedule</B> tab, a{" "}
-                            <em>Before you schedule</em> checklist lists what’s left to set up.
+                            the setup wizard, on <strong>1. Name & sport</strong> (“Step 1 of 8”), with a <strong>{t.name}</strong> label next to the league’s name
+                            and the line “This league talks about {t.units} ({u(0)}, {u(1)}), {t.time}, {t.matches} and {t.captains}.” Press{" "}
+                            <B>Next: Season</B>.
                         </Expect>
+                        <Tip>
+                            Every step lists what’s <strong>Needed</strong> (<B>Next</B> stays greyed out until it’s done), what to <strong>Check</strong>, and{" "}
+                            <strong>Notes</strong>. The step list at the top jumps to any step. <B>Exit setup</B> opens the full editor at any time, and its{" "}
+                            <B>Setup guide</B> button brings you back to the first step still missing something.
+                        </Tip>
                     </Step>
 
                     <Step n={2} id="t-season" title="Set the season dates">
                         <ol>
                             <li>
-                                On <B>Season</B>, set <B>First day</B> to <strong>03/06/2027</strong> and <B>Last day</B> to <strong>05/16/2027</strong>.
+                                On the <B>Season</B> step, set <B>First day</B> to <strong>03/06/2027</strong> and <B>Last day</B> to <strong>05/16/2027</strong>.
                             </li>
                             <li>
                                 Under <B>Blackout dates</B>, set <B>From</B> 03/27/2027 and <B>To (optional)</B> 03/28/2027 (Easter weekend), then press{" "}
@@ -322,7 +331,8 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             </li>
                         </ol>
                         <Expect>
-                            “Sat, Mar 6, 2027 to Sun, May 16, 2027, about 11 weeks.” and a chip reading <strong>Sat, Mar 27 – Sun, Mar 28</strong>.
+                            “Sat, Mar 6, 2027 to Sun, May 16, 2027, about 11 weeks.” and a chip reading <strong>Sat, Mar 27 – Sun, Mar 28</strong>. The
+                            “Needed: Set the season’s first and last day” line is gone, and <B>Next: Brackets & pools</B> can be pressed. Press it.
                         </Expect>
                         <Tip>
                             <strong>
@@ -335,7 +345,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
 
                     <Step n={3} id="t-brackets" title="Add the age brackets">
                         <p>
-                            On <B>Brackets & pools</B>, press <B>Add bracket</B> three times and fill in:
+                            On the <B>Brackets & pools</B> step, press <B>Add bracket</B> three times and fill in:
                         </p>
                         <div className="overflow-x-auto">
                             <table className="w-full min-w-[30rem] text-sm">
@@ -369,14 +379,15 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             Press <B>Save bracket</B> after each.
                         </p>
                         <Expect>
-                            three bracket cards. 10U reads “5 guaranteed {t.matches} per team · starts until 5:30 PM”. Each says “No teams yet.”
+                            three bracket cards. 10U reads “5 guaranteed {t.matches} per team · starts until 5:30 PM”. Each says “No teams yet.” Press{" "}
+                            <B>Next: Facilities</B>.
                         </Expect>
                     </Step>
 
                     <Step n={4} id="t-locations" title={`Add the facilities and their ${t.units}`}>
                         <ol>
                             <li>
-                                On <B>{tab}</B>, press <B>Add facility</B>. <B>Facility name</B>: <strong>{fac1}</strong>. Add its real address in <B>Address</B>{" "}
+                                On the <B>Facilities</B> step, press <B>Add facility</B>. <B>Facility name</B>: <strong>{fac1}</strong>. Add its real address in <B>Address</B>{" "}
                                 if you like.
                             </li>
                             <li>
@@ -400,7 +411,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                         </ol>
                         <Expect>
                             two facility cards: “3 {t.units}: {u(0)}, {u(1)}, {u(2)}” and “2 {t.units}: {u(0)}, {u(1)}”, each with a “Find on Google Maps” link
-                            and “0 weekly time slots”.
+                            and “0 weekly time slots”. Press <B>Next: {Time}</B>.
                         </Expect>
                         <Tip>
                             Names can be anything: “Center {t.unit}”, “{u(0)}”, “Upper {t.unit}”. Use <B>Add</B> next to the single-name box for one-offs, rename
@@ -410,7 +421,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
 
                     <Step n={5} id="t-slots" title={`Add the weekly ${t.time}`}>
                         <p>
-                            In <B>Add time slots</B> on the same tab, add three batches. Choose the days, type the times and pick the facility. All its {t.units}{" "}
+                            On the <B>{Time}</B> step, in <B>Add time slots</B>, add three batches. Choose the days, type the times and pick the facility. All its {t.units}{" "}
                             start selected under <B>{Units} free</B>. Then press <B>Add … slots</B>:
                         </p>
                         <ul>
@@ -451,7 +462,8 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                         </p>
                         <ol>
                             <li>
-                                On <B>{tab}</B>, under <B>Facility availability</B>, press <B>Upload a facility spreadsheet</B> and choose the file.
+                                On the same <B>{Time}</B> step, under <B>Facility availability</B>, press <B>Upload a facility spreadsheet</B> and choose the
+                                file.
                             </li>
                             <li>
                                 Check the guess: <B>Layout</B> <em>One row per time slot</em>; <B>Heading row</B> <em>Row 3</em> for the .xlsx (it has a title
@@ -477,13 +489,16 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             On those 5 dates the spreadsheet <em>replaces</em> {short1}’s weekly {t.time}. On Sunday Apr 11 there’s 11:00 and 1:00 instead of the usual
                             12:00 and 2:00. On Saturday Apr 10 only 9:00 is open, with {u(0)} and {u(1)}: the tournament closes 11:00, and 1:00 and 3:00 aren’t
                             listed. Every other date keeps the weekly pattern. The spreadsheet’s {t.unit} names match the ones you added in step 4, so no new ones
-                            appear. Press <B>Show dates</B> on the card to check.
+                            appear (the <B>Facilities</B> step still lists three). Press <B>Show dates</B> on the card to check.
                         </Tip>
+                        <p>
+                            Press <B>Next: Teams</B>.
+                        </p>
                     </Step>
 
                     <Step n={7} id="t-teams" title="Add the teams">
                         <p>
-                            On <B>Teams</B>, press <B>Paste a list instead</B>. Each line is <em>team name, pool, club</em>. Leave the pool blank (two commas) when
+                            On the <B>Teams</B> step, press <B>Paste a list instead</B>. Each line is <em>team name, pool, club</em>. Leave the pool blank (two commas) when
                             the bracket is one group. For each list: choose the bracket under <B>Bracket for all of these</B>, paste, and press <B>Add … teams</B>.
                         </p>
                         <p className="font-semibold">10U:</p>
@@ -493,9 +508,10 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                         <p className="font-semibold">14U:</p>
                         <CopyBlock text={TEAMS_14U} />
                         <Expect>
-                            <strong>Teams (18)</strong>, grouped by bracket, with 12U split into “Pool A · 4 teams” and “Pool B · 4 teams”. On{" "}
-                            <B>Brackets & pools</B>, the 10U and 12U pools note that some opponents will be played twice. With only 3 other teams in a pool, 5{" "}
-                            {t.matches} means repeats, spread as evenly as possible.
+                            <strong>Teams (18)</strong>, grouped by bracket, with 12U split into “Pool A · 4 teams” and “Pool B · 4 teams”. Back on the{" "}
+                            <B>Brackets & pools</B> step (press it in the step list at the top), the 10U and 12U pools note that some opponents will be played
+                            twice. With only 3 other teams in a pool, 5 {t.matches} means repeats, spread as evenly as possible. Go back to <B>Teams</B> and press{" "}
+                            <B>Next: Requests</B>.
                         </Expect>
                         <Tip>
                             To add one team at a time, use the <B>Add a team</B> form. You can paste straight from a spreadsheet too, since tabs work the same as
@@ -505,8 +521,8 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
 
                     <Step n={8} id="t-rules" title={`Enter the ${t.captains}’ requests`}>
                         <p>
-                            Find each team on <B>Teams</B>, press <B>Edit</B>, choose a rule from <B>Add a rule…</B>, press <B>Add rule</B>, fill it in, then{" "}
-                            <B>Save team</B>:
+                            On the <B>Requests</B> step, find each team, press <B>Add requests</B>, choose a rule from <B>Add a rule…</B>, press <B>Add rule</B>,
+                            fill it in, then <B>Save team</B>:
                         </p>
                         <ol>
                             <li>
@@ -531,17 +547,20 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             </li>
                         </ol>
                         <Expect>
-                            each team’s card shows its request as a chip, e.g. “At most 1 {t.match} per weekend” and, in amber, “Prefers: Not on Tuesdays”.
+                            each team’s card shows its request as a chip, e.g. “At most 1 {t.match} per weekend” and, in amber, “Prefers: Not on Tuesdays”, and
+                            the note “5 of 18 teams have requests.” Press <B>Next: Review & schedule</B>.
                         </Expect>
                         <Tip>
                             The sentence on the chip is exactly what the scheduler quotes if this rule ever stops a {t.match} being placed. Rules for a whole age
-                            group go on the bracket instead (<B>Brackets & pools</B> → Edit → <em>Rules for every team in this bracket</em>).
+                            group go on the bracket instead (<B>Brackets & pools</B> → Edit → <em>Rules for every team in this bracket</em>). Later, outside setup,
+                            requests are on the <B>Teams</B> tab under each team’s <B>Edit</B>.
                         </Tip>
                     </Step>
 
                     <Step n={9} id="t-generate" title="Generate the season">
                         <p>
-                            On <B>Schedule</B>, leave <em>All brackets</em> selected and press <B>Generate schedule</B>. It takes a second or two. It tries many
+                            On <B>Review & schedule</B>, the check at the top reads <strong>Ready to schedule</strong>. Notes (such as a facility with no address)
+                            don’t stop anything. Leave <em>All brackets</em> selected and press <B>Generate schedule</B>. It takes a second or two. It tries many
                             arrangements and keeps the best one.
                         </p>
                         <Expect>
@@ -551,6 +570,10 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             , <strong>Not placed 0</strong>, <strong>Break a must-rule 0</strong>, <strong>Teams short 0</strong> (“everyone’s covered”), and the
                             season listed by date from Sat, Mar 6. Each {t.match} names its {t.unit}: “{fac1} · {u(1)}”.
                         </Expect>
+                        <p>
+                            Press <B>Finish setup</B>. The league opens on its <B>Schedule</B> tab, with the other tabs beside it: <B>Teams</B>,{" "}
+                            <B>Brackets & pools</B>, <B>{tab}</B> and <B>Season</B>. The rest of the tutorial uses these tabs.
+                        </p>
                         <p>Check that the requests were respected:</p>
                         <ul>
                             <li>
