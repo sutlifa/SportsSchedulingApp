@@ -22,6 +22,7 @@ export function sampleLeague(): League {
             matchMinutes: 90,
             clubLimit: 2,
             clubLimitMode: "prefer",
+            courtsPerMatch: 1,
         },
         brackets: [
             { id: "b10", name: "10U", matches: 5, earliest: "09:00", latest: "17:30", days: [], color: "#2f7fb8", rules: [] },
@@ -47,6 +48,7 @@ export function sampleLeague(): League {
                 ["17:00", "19:00"].map((time, i) => ({ id: `s-${day}-${i}`, day, time, locationId: "loc-park", capacity: 2, bracketIds: [] }))
             ),
         ],
+        availability: [],
         teams: [
             team("t10a", "Example Aces 10U", "b10", "", "Northside", [{ id: "r1", mode: "must", type: "max_per_weekend", n: 1 }]),
             team("t10b", "Example Lobs 10U", "b10", "", "Eastgate"),

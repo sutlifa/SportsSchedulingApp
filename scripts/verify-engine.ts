@@ -202,10 +202,11 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
 {
     const t = (id: string): Team => ({ id, name: id, bracketId: "b", pool: "", club: "", captain: "", contact: "", matches: null, rules: [], notes: "" });
     const league: League = {
-        settings: { seasonStart: "2027-03-06", seasonEnd: "2027-04-04", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "must" },
+        settings: { seasonStart: "2027-03-06", seasonEnd: "2027-04-04", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "must", courtsPerMatch: 1 },
         brackets: [{ id: "b", name: "B", matches: 5, earliest: "", latest: "", days: [], color: "#000", rules: [{ id: "r", mode: "must", type: "max_per_weekend", n: 1 }] }],
         locations: [{ id: "l", name: "L", address: "", mapUrl: "", notes: "" }],
         slots: [{ id: "s", day: 6, time: "10:00", locationId: "l", capacity: 3, bracketIds: [] }],
+        availability: [],
         teams: ["a", "b", "c", "d", "e", "f"].map(t),
     };
     const r = generate(league, [], { scope: "all", seed: 3, timeBudgetMs: 1e9, maxAttempts: 200, now: () => 0 });
@@ -247,7 +248,7 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
         for (let s = 0; s < nSlots; s++)
             slots.push({ id: `s${s}`, day: Math.floor(rng() * 7) as DayOfWeek, time: pick(["09:00", "10:30", "13:00", "17:00", "19:00"]), locationId: pick(["l1", "l2"]), capacity: 1 + Math.floor(rng() * 3), bracketIds: rng() < 0.2 ? ["x"] : [] });
         const league: League = {
-            settings: { seasonStart: "2027-03-01", seasonEnd: "2027-05-30", blackouts: [{ from: "2027-04-03" }], maxPerDay: pick([1, 1, 2]), matchMinutes: 90, clubLimit: pick([null, 1, 2]), clubLimitMode: pick(["must", "prefer"]) },
+            settings: { seasonStart: "2027-03-01", seasonEnd: "2027-05-30", blackouts: [{ from: "2027-04-03" }], maxPerDay: pick([1, 1, 2]), matchMinutes: 90, clubLimit: pick([null, 1, 2]), clubLimitMode: pick(["must", "prefer"]), courtsPerMatch: 1 },
             brackets: [
                 { id: "x", name: "X", matches: 5, earliest: "", latest: pick(["", "18:00"]), days: [], color: "#000", rules: [] },
                 { id: "y", name: "Y", matches: 4, earliest: pick(["", "10:00"]), latest: "", days: rng() < 0.2 ? [6, 0] : [], color: "#000", rules: [] },
@@ -257,6 +258,7 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
                 { id: "l2", name: "L2", address: "", mapUrl: "", notes: "" },
             ],
             slots,
+            availability: [],
             teams,
         };
         const r = generate(league, [], { scope: "all", seed: trial, maxAttempts: 4, timeBudgetMs: 1e9, now: () => 0 });

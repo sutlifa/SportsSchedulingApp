@@ -12,9 +12,9 @@
  */
 import { isIsoDate, isTime } from "./dates.ts";
 import { RULE_DEFS } from "./rules.ts";
-import type { Bracket, DateRange, DayOfWeek, League, Location, Match, Rule, RuleMode, RuleType, Schedule, Settings, Slot, Team } from "./types.ts";
+import type { Availability, Bracket, DateRange, DayOfWeek, League, Location, Match, Rule, RuleMode, RuleType, Schedule, Settings, Slot, Team } from "./types.ts";
 
-const LIMITS = { brackets: 50, locations: 100, slots: 500, teams: 1000, rules: 60, matches: 10_000, text: 2000 };
+const LIMITS = { brackets: 50, locations: 100, slots: 500, availability: 15_000, teams: 1000, rules: 60, matches: 10_000, text: 2000 };
 
 type J = Record<string, unknown>;
 const obj = (v: unknown): J => (v && typeof v === "object" && !Array.isArray(v) ? (v as J) : {});
@@ -81,11 +81,11 @@ export function sanitizeRule(v: unknown): Rule | null {
 const rules = (v: unknown): Rule[] => arr(v, LIMITS.rules).map(sanitizeRule).filter((r): r is Rule => r !== null);
 
 export function defaultSettings(): Settings {
-    return { seasonStart: "", seasonEnd: "", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "prefer" };
+    return { seasonStart: "", seasonEnd: "", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "prefer", courtsPerMatch: 1 };
 }
 
 export function emptyLeague(): League {
-    return { settings: defaultSettings(), brackets: [], locations: [], slots: [], teams: [] };
+    return { settings: defaultSettings(), brackets: [], locations: [], slots: [], availability: [], teams: [] };
 }
 
 export function emptySchedule(): Schedule {
@@ -104,6 +104,7 @@ export function sanitizeLeague(v: unknown): League {
         matchMinutes: int(s.matchMinutes, def.matchMinutes, 15, 600),
         clubLimit: s.clubLimit === null || s.clubLimit === undefined || s.clubLimit === "" ? null : int(s.clubLimit, 2, 1, 50),
         clubLimitMode: mode(s.clubLimitMode ?? def.clubLimitMode),
+        courtsPerMatch: int(s.courtsPerMatch, def.courtsPerMatch, 1, 20),
     };
     const brackets: Bracket[] = arr(d.brackets, LIMITS.brackets).map((x) => {
         const b = obj(x);
@@ -128,6 +129,12 @@ export function sanitizeLeague(v: unknown): League {
             return { id: id(sl.id, fresh("s")), day: day(sl.day) ?? 6, time: time(sl.time), locationId: id(sl.locationId, ""), capacity: int(sl.capacity, 1, 0, 100), bracketIds: ids(sl.bracketIds, LIMITS.brackets) };
         })
         .filter((sl) => sl.time);
+    const availability: Availability[] = arr(d.availability, LIMITS.availability)
+        .map((x) => {
+            const a = obj(x);
+            return { id: id(a.id, fresh("a")), date: isIsoDate(a.date) ? a.date : "", time: time(a.time), locationId: id(a.locationId, ""), courts: int(a.courts, 0, 0, 200), bracketIds: ids(a.bracketIds, LIMITS.brackets) };
+        })
+        .filter((a) => a.date && a.time && a.locationId);
     const teams: Team[] = arr(d.teams, LIMITS.teams).map((x) => {
         const t = obj(x);
         return {
@@ -143,7 +150,7 @@ export function sanitizeLeague(v: unknown): League {
             notes: str(t.notes, LIMITS.text),
         };
     });
-    return { settings, brackets, locations, slots, teams };
+    return { settings, brackets, locations, slots, availability, teams };
 }
 
 export function sanitizeSchedule(v: unknown): Schedule {

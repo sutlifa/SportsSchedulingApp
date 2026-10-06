@@ -181,19 +181,33 @@ export function prepare(league: League): Ctx {
     }
     const locations = new Set(league.locations.map((l) => l.id));
     const blackout = rangesToDays(s.blackouts);
+    const courtsPerMatch = Math.max(1, Math.floor(s.courtsPerMatch || 1));
     const slots = league.slots
         .filter((sl) => isTime(sl.time) && locations.has(sl.locationId) && sl.capacity > 0)
         .sort((a, b) => toMinutes(a.time) - toMinutes(b.time));
+    // Uploaded facility availability replaces the weekly pattern for every
+    // (location, date) it mentions -- including dates it marks closed (0
+    // courts), which is exactly how a facility says "not that Saturday".
+    const avail = (league.availability ?? []).filter((a) => isIsoDate(a.date) && isTime(a.time) && locations.has(a.locationId));
+    const covered = new Set(avail.map((a) => `${a.locationId}|${a.date}`));
+    const availByDay = new Map<number, typeof avail>();
+    for (const a of avail) {
+        const d = isoToDay(a.date);
+        if (!availByDay.has(d)) availByDay.set(d, []);
+        availByDay.get(d)!.push(a);
+    }
     // A season longer than ~2 years is a typo; cap the loop rather than hang the tab.
     for (let d = startDay; d <= endDay && d - startDay < 800; d++) {
         if (blackout.has(d)) continue;
         const dow = dowOf(d);
+        const date = dayToIso(d);
+        const today: Instance[] = [];
         for (const sl of slots) {
-            if (sl.day !== dow) continue;
-            instances.push({
-                idx: instances.length,
+            if (sl.day !== dow || covered.has(`${sl.locationId}|${date}`)) continue;
+            today.push({
+                idx: 0,
                 day: d,
-                date: dayToIso(d),
+                date,
                 time: sl.time,
                 minutes: toMinutes(sl.time),
                 slotId: sl.id,
@@ -202,6 +216,23 @@ export function prepare(league: League): Ctx {
                 bracketIds: sl.bracketIds.length ? new Set(sl.bracketIds) : null,
             });
         }
+        for (const a of availByDay.get(d) ?? []) {
+            const capacity = Math.floor(a.courts / courtsPerMatch);
+            if (capacity <= 0) continue;
+            today.push({
+                idx: 0,
+                day: d,
+                date,
+                time: a.time,
+                minutes: toMinutes(a.time),
+                slotId: a.id,
+                locationId: a.locationId,
+                capacity,
+                bracketIds: a.bracketIds.length ? new Set(a.bracketIds) : null,
+            });
+        }
+        today.sort((x, y) => x.minutes - y.minutes);
+        for (const inst of today) instances.push({ ...inst, idx: instances.length });
     }
     const instByKey = new Map(instances.map((i) => [instanceKey(i.date, i.slotId), i]));
 
@@ -848,7 +879,7 @@ export function audit(league: League, matches: Match[]): Audit {
         place(ctx, st, m.home, m.away, spot, -1);
         const cap = spot.idx >= 0 ? ctx.instances[spot.idx].capacity : Infinity;
         const v = check(ctx, st, m.home, m.away, spot, cap, false);
-        if (spot.idx < 0) v.soft.unshift("This time slot is no longer in the weekly schedule");
+        if (spot.idx < 0) v.soft.unshift("This time is no longer in the weekly slots or the facility’s availability");
         place(ctx, st, m.home, m.away, spot, 1);
         if (v.hard.length || v.soft.length) issues.set(m.id, v);
     }

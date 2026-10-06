@@ -84,6 +84,24 @@ export type Slot = {
     bracketIds: string[];
 };
 
+/**
+ * One dated block of court time from a facility's availability sheet.
+ *
+ * For any (location, date) that has at least one of these, they REPLACE that
+ * location's weekly slots on that date -- the facility's sheet is the truth
+ * for the days it covers, and the weekly pattern fills in the rest. A row
+ * with 0 courts marks a time as closed.
+ */
+export type Availability = {
+    id: string;
+    date: string;
+    time: string;
+    locationId: string;
+    courts: number;
+    /** Brackets allowed. Empty = all brackets. */
+    bracketIds: string[];
+};
+
 export type Team = {
     id: string;
     name: string;
@@ -112,6 +130,12 @@ export type Settings = {
     /** Max matches involving one club at the same date and time. null = no limit. */
     clubLimit: number | null;
     clubLimitMode: RuleMode;
+    /**
+     * Courts one match occupies (a team match often plays several lines at
+     * once). Uploaded availability is in courts; this turns it into matches
+     * at once. Weekly slots are entered directly as matches at once.
+     */
+    courtsPerMatch: number;
 };
 
 export type League = {
@@ -119,6 +143,8 @@ export type League = {
     brackets: Bracket[];
     locations: Location[];
     slots: Slot[];
+    /** Dated court availability uploaded from facility sheets. */
+    availability: Availability[];
     teams: Team[];
 };
 
