@@ -12,7 +12,8 @@
  */
 import { isIsoDate, isTime } from "./dates.ts";
 import { RULE_DEFS } from "./rules.ts";
-import type { Availability, Bracket, DateRange, DayOfWeek, League, Location, Match, Rule, RuleMode, RuleType, Schedule, Settings, Slot, Team } from "./types.ts";
+import { isSportId, SPORTS, type SportId } from "./sports.ts";
+import type { Availability, Bracket, Unit, DateRange, DayOfWeek, League, Location, Match, Rule, RuleMode, RuleType, Schedule, Settings, Slot, Team } from "./types.ts";
 
 const LIMITS = { brackets: 50, locations: 100, slots: 500, availability: 15_000, teams: 1000, rules: 60, matches: 10_000, text: 2000 };
 
@@ -80,12 +81,13 @@ export function sanitizeRule(v: unknown): Rule | null {
 
 const rules = (v: unknown): Rule[] => arr(v, LIMITS.rules).map(sanitizeRule).filter((r): r is Rule => r !== null);
 
-export function defaultSettings(): Settings {
-    return { seasonStart: "", seasonEnd: "", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "prefer", courtsPerMatch: 1 };
+export function defaultSettings(sport: SportId = "tennis"): Settings {
+    // Each sport starts with its usual game length (hockey 75, tennis 90...).
+    return { sport, seasonStart: "", seasonEnd: "", blackouts: [], maxPerDay: 1, matchMinutes: SPORTS[sport].minutes, clubLimit: null, clubLimitMode: "prefer", courtsPerMatch: 1 };
 }
 
-export function emptyLeague(): League {
-    return { settings: defaultSettings(), brackets: [], locations: [], slots: [], availability: [], teams: [] };
+export function emptyLeague(sport: SportId = "tennis"): League {
+    return { settings: defaultSettings(sport), brackets: [], locations: [], slots: [], availability: [], teams: [] };
 }
 
 export function emptySchedule(): Schedule {
@@ -97,6 +99,8 @@ export function sanitizeLeague(v: unknown): League {
     const s = obj(d.settings);
     const def = defaultSettings();
     const settings: Settings = {
+        // Leagues saved before sports existed were all tennis.
+        sport: isSportId(s.sport) ? s.sport : "tennis",
         seasonStart: isIsoDate(s.seasonStart) ? s.seasonStart : "",
         seasonEnd: isIsoDate(s.seasonEnd) ? s.seasonEnd : "",
         blackouts: ranges(s.blackouts),
@@ -121,18 +125,23 @@ export function sanitizeLeague(v: unknown): League {
     });
     const locations: Location[] = arr(d.locations, LIMITS.locations).map((x) => {
         const l = obj(x);
-        return { id: id(l.id, fresh("l")), name: str(l.name, 120) || "Unnamed location", address: str(l.address, 300), mapUrl: safeMapUrl(str(l.mapUrl, 1000)), notes: str(l.notes, LIMITS.text) };
+        const units: Unit[] = [];
+        for (const u of arr(l.units, 100).map(obj)) {
+            const name = str(u.name, 60).trim();
+            if (name && !units.some((x) => x.name.toLowerCase() === name.toLowerCase())) units.push({ id: id(u.id, fresh("u")), name });
+        }
+        return { id: id(l.id, fresh("l")), name: str(l.name, 120) || "Unnamed location", address: str(l.address, 300), mapUrl: safeMapUrl(str(l.mapUrl, 1000)), notes: str(l.notes, LIMITS.text), units };
     });
     const slots: Slot[] = arr(d.slots, LIMITS.slots)
         .map((x) => {
             const sl = obj(x);
-            return { id: id(sl.id, fresh("s")), day: day(sl.day) ?? 6, time: time(sl.time), locationId: id(sl.locationId, ""), capacity: int(sl.capacity, 1, 0, 100), bracketIds: ids(sl.bracketIds, LIMITS.brackets) };
+            return { id: id(sl.id, fresh("s")), day: day(sl.day) ?? 6, time: time(sl.time), locationId: id(sl.locationId, ""), capacity: int(sl.capacity, 1, 0, 100), unitIds: ids(sl.unitIds, 100), bracketIds: ids(sl.bracketIds, LIMITS.brackets) };
         })
         .filter((sl) => sl.time);
     const availability: Availability[] = arr(d.availability, LIMITS.availability)
         .map((x) => {
             const a = obj(x);
-            return { id: id(a.id, fresh("a")), date: isIsoDate(a.date) ? a.date : "", time: time(a.time), locationId: id(a.locationId, ""), courts: int(a.courts, 0, 0, 200), bracketIds: ids(a.bracketIds, LIMITS.brackets) };
+            return { id: id(a.id, fresh("a")), date: isIsoDate(a.date) ? a.date : "", time: time(a.time), locationId: id(a.locationId, ""), courts: int(a.courts, 0, 0, 200), unitIds: ids(a.unitIds, 100), bracketIds: ids(a.bracketIds, LIMITS.brackets) };
         })
         .filter((a) => a.date && a.time && a.locationId);
     const teams: Team[] = arr(d.teams, LIMITS.teams).map((x) => {
@@ -168,6 +177,7 @@ export function sanitizeSchedule(v: unknown): Schedule {
             time: placed ? (m.time as string) : null,
             locationId: placed ? id(m.locationId, "") || null : null,
             slotId: placed ? id(m.slotId, "") || null : null,
+            ...(placed && Array.isArray(m.unitIds) && m.unitIds.length ? { unitIds: ids(m.unitIds, 20) } : {}),
             locked: m.locked === true,
             ...(typeof m.note === "string" && m.note ? { note: m.note.slice(0, 1000) } : {}),
             ...(Array.isArray(m.blockers) && m.blockers.length

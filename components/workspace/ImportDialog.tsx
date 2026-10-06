@@ -2,13 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { formatDate, formatTime, isIsoDate } from "@/lib/engine/dates";
+import { cap, type Terms } from "@/lib/engine/sports";
 import type { Availability, League, Location } from "@/lib/engine/types";
 import { cellText, guessMapping, parseDelimited, parseWith, type Cell, type Ctx, type Layout, type Mapping } from "@/lib/import/sheet";
 import { readXlsx, type Sheet } from "@/lib/import/xlsx";
 import { Field, Modal, NumberInput, uid } from "./ui";
 
 /**
- * Upload a facility's court-availability sheet.
+ * Upload a facility's availability sheet (court time, ice time, field time).
  *
  * Facilities all send something different, so the importer guesses the
  * layout and columns (lib/import/sheet.ts), shows the guess next to the raw
@@ -19,11 +20,13 @@ import { Field, Modal, NumberInput, uid } from "./ui";
  */
 export default function ImportDialog({
     league,
+    t,
     onClose,
     onImport,
 }: {
     league: League;
     onClose: () => void;
+    t: Terms;
     onImport: (patch: { locations: Location[]; availability: Availability[] }, summary: string) => void;
 }) {
     const [sheets, setSheets] = useState<Sheet[] | null>(null);
@@ -88,7 +91,8 @@ export default function ImportDialog({
 
     const apply = () => {
         if (!parsed || !parsed.rows.length || !fallbackOk) return;
-        const newLocations: Location[] = [];
+        // Copies, so units can be added to existing facilities too.
+        const locations: Location[] = league.locations.map((l) => ({ ...l, units: [...l.units] }));
         const nameToId = new Map([...locByName.entries()].map(([k, l]) => [k, l.id]));
         const ensure = (name: string) => {
             const k = name.trim().toLowerCase();
@@ -96,9 +100,23 @@ export default function ImportDialog({
             if (!id) {
                 id = uid("l");
                 nameToId.set(k, id);
-                newLocations.push({ id, name: name.trim(), address: "", mapUrl: "", notes: "Added from a facility availability sheet." });
+                locations.push({ id, name: name.trim(), address: "", mapUrl: "", notes: "Added from a facility availability sheet.", units: [] });
             }
             return id;
+        };
+        // A sheet that names its units ("Sheet A") attaches to the facility's
+        // units by name, adding any the facility doesn't have yet.
+        const unitIdsFor = (locId: string, names: string[] | undefined): string[] => {
+            if (!names?.length) return [];
+            const loc = locations.find((l) => l.id === locId);
+            if (!loc) return [];
+            return names.map((name) => {
+                const found = loc.units.find((u) => u.name.toLowerCase() === name.trim().toLowerCase());
+                if (found) return found.id;
+                const unit = { id: uid("u"), name: name.trim().slice(0, 60) };
+                loc.units.push(unit);
+                return unit.id;
+            });
         };
         const fallbackId = locationId || (newLocName.trim() ? ensure(newLocName) : "");
         // Re-importing a sheet keeps the id of every (location, date, time)
@@ -108,13 +126,13 @@ export default function ImportDialog({
         const existing = new Map(league.availability.map((a) => [`${a.locationId}|${a.date}|${a.time}`, a.id]));
         const rows: Availability[] = parsed.rows.map((r) => {
             const loc = r.location ? ensure(r.location) : fallbackId;
-            return { id: existing.get(`${loc}|${r.date}|${r.time}`) ?? uid("a"), date: r.date, time: r.time, locationId: loc, courts: r.courts, bracketIds };
+            return { id: existing.get(`${loc}|${r.date}|${r.time}`) ?? uid("a"), date: r.date, time: r.time, locationId: loc, courts: r.courts, unitIds: unitIdsFor(loc, r.units), bracketIds };
         });
         const covered = new Set(rows.map((r) => `${r.locationId}|${r.date}`));
         const kept = league.availability.filter((a) => !covered.has(`${a.locationId}|${a.date}`));
         onImport(
-            { locations: [...league.locations, ...newLocations], availability: [...kept, ...rows] },
-            `Imported ${rows.length} time slots on ${dates.length} dates from ${source}.`
+            { locations, availability: [...kept, ...rows] },
+            `Imported ${rows.length} ${t.time} slots on ${dates.length} dates from ${source}.`
         );
     };
 
@@ -228,7 +246,7 @@ export default function ImportDialog({
                                     <>
                                         {colSelect("imp-date", "Date column", "date", "Choose…")}
                                         {colSelect("imp-time", "Start time column", "time", "In the date column")}
-                                        {colSelect("imp-courts", "Courts column", "courts", "Not in this sheet")}
+                                        {colSelect("imp-courts", `${cap(t.units)} column`, "courts", "Not in this sheet")}
                                         {colSelect("imp-loc", "Location column", "location", "Not in this sheet")}
                                     </>
                                 ) : (
@@ -245,19 +263,19 @@ export default function ImportDialog({
                                 {mapping.layout === "rows" && (
                                     <Field label="Each row is" htmlFor="imp-courts-mode">
                                         <select id="imp-courts-mode" className="input" value={mapping.courtsMode} onChange={(e) => setM({ courtsMode: e.target.value === "names" ? "names" : "count" })}>
-                                            <option value="count">{mapping.courts === null ? "A time slot" : "A time slot with a number of courts"}</option>
-                                            <option value="names">{mapping.courts === null ? "One court (rows at the same time are added up)" : "One court, by name (courts at the same time are counted)"}</option>
+                                            <option value="count">{mapping.courts === null ? "A time slot" : `A time slot with a number of ${t.units}`}</option>
+                                            <option value="names">{mapping.courts === null ? `One ${t.unit} (rows at the same time are added up)` : `One ${t.unit}, by name (${t.units} at the same time are counted)`}</option>
                                         </select>
                                     </Field>
                                 )}
                                 {mapping.layout === "rows" && mapping.courtsMode === "names" && (
                                     <p className="rounded-md bg-warn-soft p-2 text-sm text-warn sm:col-span-2">
-                                        Reading each row as one court: rows at the same date and time are added up as separate courts. If the courts column is a number of
-                                        courts, change “Each row is” above.
+                                        Reading each row as one {t.unit}: rows at the same date and time are added up as separate {t.units}, and their names are added
+                                        to the facility. If the {t.units} column is a number of {t.units}, change “Each row is” above.
                                     </p>
                                 )}
                                 {mapping.layout === "rows" && mapping.courts === null && mapping.courtsMode === "count" && (
-                                    <Field label="Courts for every slot" htmlFor="imp-default-courts" hint="The sheet has no courts column.">
+                                    <Field label={`${cap(t.units)} for every slot`} htmlFor="imp-default-courts" hint={`The sheet has no ${t.units} column.`}>
                                         <NumberInput id="imp-default-courts" value={defaultCourts} min={1} max={200} onChange={setDefaultCourts} />
                                     </Field>
                                 )}
@@ -350,7 +368,7 @@ export default function ImportDialog({
                                 {parsed.rows.length ? (
                                     <p className="text-sm">
                                         <strong>{parsed.rows.length}</strong> time slots on <strong>{dates.length}</strong> dates, {formatDate(dates[0], true)} to {formatDate(dates[dates.length - 1], true)}.
-                                        {cpm > 1 && ` At ${cpm} courts per match (Season settings), 6 courts means 3 matches at once.`}
+                                        {cpm > 1 && ` At ${cpm} ${t.units} per ${t.match} (Season settings), ${cpm * 3} ${t.units} means 3 ${t.matches} at once.`}
                                         {parsed.duplicates > 0 && ` ${parsed.duplicates} repeated date/time rows: the last one wins.`}
                                     </p>
                                 ) : (
@@ -376,8 +394,8 @@ export default function ImportDialog({
                                                 <tr>
                                                     <th className="label px-3 py-1">Date</th>
                                                     <th className="label px-3 py-1">Start</th>
-                                                    <th className="label px-3 py-1">Courts</th>
-                                                    <th className="label px-3 py-1">Matches at once</th>
+                                                    <th className="label px-3 py-1">{cap(t.units)}</th>
+                                                    <th className="label px-3 py-1">{cap(t.matches)} at once</th>
                                                     {sheetLocNames.length > 0 && <th className="label px-3 py-1">Location</th>}
                                                 </tr>
                                             </thead>
@@ -386,7 +404,7 @@ export default function ImportDialog({
                                                     <tr key={`${r.date}|${r.time}|${r.location}`} className={inSeason(r.date) ? "" : "text-muted"}>
                                                         <td className="px-3 py-1">{formatDate(r.date)}</td>
                                                         <td className="px-3 py-1 font-mono tabular">{formatTime(r.time)}</td>
-                                                        <td className="px-3 py-1 tabular">{r.courts === 0 ? "Closed" : r.courts}</td>
+                                                        <td className="px-3 py-1 tabular">{r.courts === 0 ? "Closed" : r.units?.length ? r.units.join(", ") : r.courts}</td>
                                                         <td className="px-3 py-1 tabular">{Math.floor(r.courts / cpm)}</td>
                                                         {sheetLocNames.length > 0 && <td className="px-3 py-1">{r.location ?? "—"}</td>}
                                                     </tr>

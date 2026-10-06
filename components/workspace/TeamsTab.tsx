@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { formatTime } from "@/lib/engine/dates";
 import { describeRule } from "@/lib/engine/rules";
+import { cap } from "@/lib/engine/sports";
 import type { Team } from "@/lib/engine/types";
 import RuleEditor from "./RuleEditor";
 import { withData, type TabProps } from "./types";
@@ -10,7 +11,7 @@ import { BracketChip, ConfirmButton, Field, Modal, NumberInput, uid } from "./ui
 
 const blankTeam = (bracketId: string): Team => ({ id: "", name: "", bracketId, pool: "", club: "", captain: "", contact: "", matches: null, rules: [], notes: "" });
 
-export default function TeamsTab({ doc, change, lookup, goTo, result }: TabProps) {
+export default function TeamsTab({ doc, change, lookup, goTo, result, t: terms }: TabProps) {
     const { data } = doc;
     const [draft, setDraft] = useState<Team>(() => blankTeam(data.brackets[0]?.id ?? ""));
     const [bulk, setBulk] = useState(false);
@@ -89,7 +90,7 @@ export default function TeamsTab({ doc, change, lookup, goTo, result }: TabProps
                 {!bulk ? (
                     <form onSubmit={addOne} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1.3fr_auto_auto] lg:items-end">
                         <Field label="Team name" htmlFor="new-team-name">
-                            <input id="new-team-name" className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Riverside Aces 12U" />
+                            <input id="new-team-name" className="input" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Riverside Hawks 12U" />
                         </Field>
                         <Field label="Age bracket" htmlFor="new-team-bracket">
                             <select id="new-team-bracket" className="input" value={draft.bracketId} onChange={(e) => setDraft({ ...draft, bracketId: e.target.value })}>
@@ -116,7 +117,7 @@ export default function TeamsTab({ doc, change, lookup, goTo, result }: TabProps
                                 ))}
                             </datalist>
                         </Field>
-                        <Field label="Matches" htmlFor="new-team-matches">
+                        <Field label={cap(terms.matches)} htmlFor="new-team-matches">
                             <NumberInput id="new-team-matches" value={draft.matches} onChange={(v) => setDraft({ ...draft, matches: v })} placeholder={String(bracketOf(draft.bracketId)?.matches ?? "")} className="input w-20" />
                         </Field>
                         <button className="btn-primary" disabled={!draft.name.trim()}>
@@ -159,7 +160,7 @@ export default function TeamsTab({ doc, change, lookup, goTo, result }: TabProps
                     <h2 className="font-display text-2xl font-bold uppercase tracking-wide">
                         Teams <span className="text-muted tabular">({data.teams.length})</span>
                     </h2>
-                    <input aria-label="Search teams" className="input max-w-xs" placeholder="Search name, club, captain" value={search} onChange={(e) => setSearch(e.target.value)} />
+                    <input aria-label="Search teams" className="input max-w-xs" placeholder={`Search name, club, ${terms.captain}`} value={search} onChange={(e) => setSearch(e.target.value)} />
                 </div>
                 {data.brackets.map((b) => {
                     const bt = shown.filter((t) => t.bracketId === b.id);
@@ -194,7 +195,7 @@ export default function TeamsTab({ doc, change, lookup, goTo, result }: TabProps
                                                                 <div className="flex flex-wrap items-baseline gap-x-2">
                                                                     <span className="font-semibold">{t.name}</span>
                                                                     {t.club && <span className="text-sm text-muted">{t.club}</span>}
-                                                                    {t.captain && <span className="text-sm text-muted">· Captain {t.captain}</span>}
+                                                                    {t.captain && <span className="text-sm text-muted">· {cap(terms.captain)} {t.captain}</span>}
                                                                 </div>
                                                                 {t.rules.length > 0 && (
                                                                     <ul className="mt-1 flex flex-wrap gap-1">
@@ -234,7 +235,7 @@ export default function TeamsTab({ doc, change, lookup, goTo, result }: TabProps
                 <TeamDialog
                     key={editing.id}
                     team={editing}
-                    props={{ doc, change, lookup, goTo, result } as TabProps}
+                    props={{ doc, change, lookup, goTo, result, t: terms } as TabProps}
                     pools={pools}
                     clubs={clubs}
                     onClose={() => setEditing(null)}
@@ -306,18 +307,18 @@ function TeamDialog({
                             ))}
                         </datalist>
                     </Field>
-                    <Field label="Captain" htmlFor="team-captain">
+                    <Field label={cap(props.t.captain)} htmlFor="team-captain">
                         <input id="team-captain" className="input" value={t.captain} onChange={(e) => setT({ ...t, captain: e.target.value })} />
                     </Field>
-                    <Field label="Captain contact" htmlFor="team-contact">
+                    <Field label={`${cap(props.t.captain)} contact`} htmlFor="team-contact">
                         <input id="team-contact" className="input" value={t.contact} onChange={(e) => setT({ ...t, contact: e.target.value })} placeholder="Phone or email" />
                     </Field>
-                    <Field label="Guaranteed matches" htmlFor="team-matches" hint={`Leave blank to use the bracket’s ${bracket?.matches ?? "default"}.`}>
+                    <Field label={`Guaranteed ${props.t.matches}`} htmlFor="team-matches" hint={`Leave blank to use the bracket’s ${bracket?.matches ?? "default"}.`}>
                         <NumberInput id="team-matches" value={t.matches} onChange={(v) => setT({ ...t, matches: v })} placeholder={String(bracket?.matches ?? "")} />
                     </Field>
                 </div>
                 <div>
-                    <h3 className="label">Scheduling rules & captain requests</h3>
+                    <h3 className="label">Scheduling rules & {props.t.captain} requests</h3>
                     {bracket && bracket.rules.length > 0 && (
                         <p className="mb-2 text-xs text-muted">Also applies from {bracket.name}: {bracket.rules.map((r) => describeRule(r, props.lookup)).join("; ")}.</p>
                     )}

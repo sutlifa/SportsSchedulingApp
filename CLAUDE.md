@@ -1,6 +1,6 @@
 @AGENTS.md
 
-# Courtside (SportsSchedulingApp) — agent context
+# Seasonsmith (repo: SportsSchedulingApp) — agent context
 
 Read this before touching anything. Kept short on purpose; same house rules as SongRank.
 
@@ -10,11 +10,18 @@ Read this before touching anything. Kept short on purpose; same house rules as S
 
 ## What it is
 
-A tennis league scheduler. A league (one season) has brackets (10U, 12U…) with pools,
-locations, weekly time slots with a capacity (matches at once), and teams with rules.
-"Generate" pairs every team with its guaranteed number of matches (default 5) against its
-own bracket+pool, then places each pairing into a dated slot without breaking any "must"
-rule. Teams do NOT have to play every week.
+A league/tournament scheduler for ANY sport (named Seasonsmith; it was "Courtside" and
+tennis-only at first). A league (one season or tournament) has a sport, brackets (10U, 12U…)
+with pools, facilities with named units (Sheet A / Field 3 / Court 2), weekly time slots
+(which units are free, or a number of games at once), uploaded facility availability, and
+teams with rules. "Generate" pairs every team with its guaranteed number of games (default 5)
+against its own bracket+pool, places each pairing into a dated slot without breaking any
+"must" rule, then assigns each game its unit(s). Teams do NOT have to play every week.
+
+**Words come from the sport** (`lib/engine/sports.ts` `termsFor(settings.sport)`): court/sheet/
+field, court/ice/field time, match/game, captain/coach. Never hard-code tennis words in UI or
+engine messages: use `t.unit`, `t.time`, `t.matches`…, or `sportText()` for static copy.
+Leagues saved before `sport` existed are tennis. The product name lives only in `lib/brand.ts`.
 
 ## Stack (pinned — don't bump casually)
 
@@ -28,13 +35,19 @@ native flat exports — never `FlatCompat`); Turbopack is default. Docs: `node_m
 ## Architecture
 
 ```
+lib/brand.ts      APP_NAME / tagline — the only place the product name is written
 lib/engine/       PURE, shared by client, API and scripts. Imports use .ts extensions.
-  types.ts        the whole data model (League = settings+brackets+locations+slots+teams)
+  types.ts        the whole data model (League = settings+brackets+locations(+units)+slots
+                  +availability+teams; Match.unitIds = the game's assigned units)
+  sports.ts       each sport's words + unit naming + default game length; sportText()
   dates.ts        day-number arithmetic (no Date/DST bugs), parsing/formatting
   rules.ts        rule catalogue + describeRule() — ONE sentence used in editor, chips AND
                   "why couldn't this be placed"; keep them identical
   engine.ts       prepare → pairPool → greedy placement, best of N randomized attempts;
-                  audit() re-checks a saved schedule; moveOptions() for hand moves
+                  assignUnits() gives each game its unit(s) — STABLE: valid existing
+                  assignments are kept (locked first) so a coach told "Sheet B" isn't moved;
+                  audit() re-checks a saved schedule (incl. double-booked units);
+                  moveOptions() for hand moves (with each time's free units)
   sanitize.ts     coerce untrusted JSON (API bodies, backups) into a League/Schedule
   sample.ts       the "example league" AND the main verify fixture
   advice.ts       problem message → plain fix + the tab to make it on (matches engine
@@ -50,9 +63,16 @@ lib/db/schema.ts  the whole DDL as a string; lib/db/ensure.ts runs it once per c
 lib/leagues.ts    every leagues query; user_id + deleted_at filtered IN the SQL
 lib/client/store.ts  cloud (API) and browser (localStorage) stores behind one interface
 components/workspace/  the league editor (tabs)
-app/guide/        user guide + tutorial; scripts/e2e/tutorial.mjs drives it word for word
+components/guide/ the guide + tutorial (client: follows a sport picker); app/guide is its
+                  server wrapper. scripts/e2e/tutorial.mjs drives it word for word in every
+                  sport; public/tutorial/<sport>-april-2027.* come from scripts/make-tutorial-sheets.py
+app/about, app/privacy  linked from SiteFooter. Privacy states what the code does — keep it true
 scripts/verify-engine.ts  headless invariants — run it, don't eyeball
 ```
+
+**Units decide capacity when named**: a slot/upload that names units has
+floor(units / settings.courtsPerMatch) games at once; otherwise its number. Sheets that list
+units one per row ("Sheet A") attach to the facility's units by name, creating missing ones.
 
 **Facility uploads (`League.availability`) REPLACE the weekly slots for every (location,
 date) they mention**, including 0-court rows (= closed); other dates keep the weekly
@@ -83,7 +103,10 @@ match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don'
   lib/guard.ts, which logs under an UPPERCASE label with a reference code and returns
   "… (Reference ABC123)" so a user's screenshot finds the log line.
 - **The guide is tested.** Changing a UI label or behaviour that /guide's tutorial mentions
-  means updating the guide AND scripts/e2e/tutorial.mjs, and re-running it.
+  means updating the guide AND scripts/e2e/tutorial.mjs, and re-running it (all sports:
+  SPORTS=hockey,tennis,pickleball,soccer,basketball,volleyball,baseball,softball,lacrosse,football,other).
+- **Never rename storage keys or the backup tag** to match the brand: `tennis-scheduler.leagues.v1`,
+  `courtside.mirror.*` and the accepted `courtside-league` backup tag hold real users' data.
 - Never read localStorage in render or a useState initializer (hydration mismatch).
 - `react-hooks` v7: no components defined inside components (use render functions), no refs
   read during render.
@@ -93,7 +116,8 @@ match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don'
 
 ```bash
 npm run lint && npm run typecheck && npm run build   # build must pass with NO env vars
-npm run verify                                       # engine + import invariants (~6s), incl. fuzz
+npm run verify                                       # engine + import invariants (~8s), incl. fuzz, all sports
+npm run sheets                                       # regenerate public/tutorial sample sheets
 npm run verify:db                                    # needs a LOCAL throwaway DATABASE_URL
 npm run db:migrate                                   # optional; app self-migrates
 ```

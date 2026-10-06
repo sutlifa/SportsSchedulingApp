@@ -4,12 +4,13 @@ import { useState } from "react";
 import { DAY_SHORT, formatTime } from "@/lib/engine/dates";
 import { teamTarget } from "@/lib/engine/engine";
 import { describeRule } from "@/lib/engine/rules";
+import { sportText } from "@/lib/engine/sports";
 import type { Bracket } from "@/lib/engine/types";
 import RuleEditor from "./RuleEditor";
 import { withData, type TabProps } from "./types";
 import { BRACKET_COLORS, ConfirmButton, DaysPicker, Field, Modal, NumberInput, uid } from "./ui";
 
-export default function BracketsTab({ doc, change, lookup, goTo }: TabProps) {
+export default function BracketsTab({ doc, change, lookup, goTo, t }: TabProps) {
     const { data } = doc;
     const [editing, setEditing] = useState<Bracket | null>(null);
 
@@ -37,7 +38,7 @@ export default function BracketsTab({ doc, change, lookup, goTo }: TabProps) {
                 <div>
                     <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Brackets &amp; pools</h2>
                     <p className="text-sm text-muted">
-                        Each team plays its guaranteed matches against teams in its own bracket and pool. Teams don’t have to play every week.
+                        Each team plays its guaranteed {t.matches} against teams in its own bracket and pool. Teams don’t have to play every week.
                     </p>
                 </div>
                 <button className="btn-primary" onClick={() => setEditing(newBracket())}>
@@ -67,7 +68,7 @@ export default function BracketsTab({ doc, change, lookup, goTo }: TabProps) {
                                 <div>
                                     <h3 className="font-display text-2xl font-bold uppercase">{b.name}</h3>
                                     <p className="text-sm text-muted">
-                                        {b.matches} guaranteed matches per team ·{" "}
+                                        {b.matches} guaranteed {t.matches} per team ·{" "}
                                         {b.earliest || b.latest ? `starts ${b.earliest ? `from ${formatTime(b.earliest)}` : ""}${b.earliest && b.latest ? " " : ""}${b.latest ? `until ${formatTime(b.latest)}` : ""}` : "any start time"}
                                         {b.days.length ? ` · ${b.days.map((d) => DAY_SHORT[d]).join(", ")} only` : ""}
                                     </p>
@@ -103,7 +104,7 @@ export default function BracketsTab({ doc, change, lookup, goTo }: TabProps) {
                                             pt.length < 2
                                                 ? { tone: "text-danger", text: "Only one team: nobody to play" }
                                                 : total % 2 === 1
-                                                  ? { tone: "text-warn", text: "Odd total: one team will be a match short" }
+                                                  ? { tone: "text-warn", text: sportText("Odd total: one team will be a match short", t) }
                                                   : b.matches > maxOpp
                                                     ? { tone: "text-muted", text: `Some opponents will be played twice (only ${maxOpp} to choose from)` }
                                                     : null;
@@ -126,7 +127,7 @@ export default function BracketsTab({ doc, change, lookup, goTo }: TabProps) {
                 <BracketDialog
                     key={editing.id || "new"}
                     bracket={editing}
-                    props={{ doc, change, lookup, goTo } as TabProps}
+                    props={{ doc, change, lookup, goTo, t } as TabProps}
                     onClose={() => setEditing(null)}
                     onSave={(b) => {
                         save(b);
@@ -160,7 +161,7 @@ function BracketDialog({ bracket, props, onClose, onSave, onDelete }: { bracket:
                     <Field label="Name" htmlFor="br-name">
                         <input id="br-name" className="input" value={b.name} onChange={(e) => setB({ ...b, name: e.target.value })} placeholder="12U" />
                     </Field>
-                    <Field label="Guaranteed matches per team" htmlFor="br-matches" hint="Each team can override this.">
+                    <Field label={`Guaranteed ${props.t.matches} per team`} htmlFor="br-matches" hint="Each team can override this.">
                         <NumberInput id="br-matches" value={b.matches} onChange={(v) => setB({ ...b, matches: v ?? 0 })} />
                     </Field>
                     <Field label="Earliest start" htmlFor="br-earliest" hint="Blank = no limit.">

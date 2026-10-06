@@ -1,6 +1,7 @@
 import type { Mode } from "@/lib/client/store";
 import type { Audit } from "@/lib/engine/engine";
 import type { NameLookup } from "@/lib/engine/rules";
+import type { Terms } from "@/lib/engine/sports";
 import type { League, Schedule } from "@/lib/engine/types";
 
 export type Doc = { name: string; data: League; schedule: Schedule };
@@ -15,6 +16,8 @@ export type TabProps = {
     lookup: NameLookup;
     goTo: (t: Tab) => void;
     mode: Mode;
+    /** The league's sport words ("ice time", "sheet", "game", "coach"). */
+    t: Terms;
 };
 
 /** Small helper: replace one field of `data`. */

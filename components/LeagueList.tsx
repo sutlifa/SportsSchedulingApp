@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { downloadText, fileSafe, makeBackup, parseBackup } from "@/lib/client/backup";
 import { browserLeagues, browserStore, readMirrors, storeFor, type LeagueSummary, type Mirror, type Mode } from "@/lib/client/store";
 import { sampleLeague } from "@/lib/engine/sample";
+import { emptyLeague } from "@/lib/engine/sanitize";
+import { SPORT_IDS, SPORTS, isSportId, type SportId } from "@/lib/engine/sports";
 
 type Start = "blank" | "example" | "file";
 
@@ -15,6 +17,10 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
     const [leagues, setLeagues] = useState<LeagueSummary[] | null>(initial);
     const [name, setName] = useState("");
     const [start, setStart] = useState<Start>("blank");
+    // No default sport on purpose: it sets every word the league uses (ice
+    // time vs court time, game vs match), so it should be a choice, not an
+    // accident. A backup file brings its own sport.
+    const [sport, setSport] = useState<SportId | "">("");
     const [file, setFile] = useState<File | null>(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(loadError);
@@ -52,11 +58,13 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                 if (!file) throw new Error("Choose a backup file first.");
                 const b = parseBackup(await file.text());
                 rec = await store.create(name.trim() || b.name, b.data, b.schedule);
-            } else if (start === "example") {
-                rec = await store.create(name.trim() || "Example league", sampleLeague());
             } else {
-                if (!name.trim()) throw new Error("Give the league a name, like “Spring 2027 Junior Team Tennis”.");
-                rec = await store.create(name.trim());
+                if (!sport) throw new Error("Choose the sport you’re scheduling. It sets the words the whole league uses.");
+                if (start === "example") rec = await store.create(name.trim() || `Example ${SPORTS[sport].name.toLowerCase()} league`, sampleLeague(sport));
+                else {
+                    if (!name.trim()) throw new Error("Give the league or tournament a name, like “Spring 2027 Youth Hockey”.");
+                    rec = await store.create(name.trim(), emptyLeague(sport));
+                }
             }
             router.push(`/league/${rec.id}`);
         } catch (err) {
@@ -91,7 +99,7 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
         <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 md:grid-cols-[minmax(0,1fr)_22rem]">
             <section className="min-w-0">
                 <h1 className="font-display text-4xl font-bold uppercase tracking-wide">Your leagues</h1>
-                <p className="mt-1 text-muted">One league per season. Each holds its brackets, pools, courts, teams, rules and schedule.</p>
+                <p className="mt-1 text-muted">One league (or tournament) per season, in any sport. Each holds its brackets, pools, facilities, teams, rules and schedule.</p>
 
                 {mode === "cloud" && localCount > 0 && (
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent-soft p-3 text-sm">
@@ -183,7 +191,7 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                 <Link href="/guide#tutorial" className="card block border-accent/40 bg-accent-soft p-4 hover:border-accent">
                     <div className="font-display text-xl font-bold uppercase tracking-wide">New here?</div>
                     <p className="mt-1 text-sm">
-                        Follow the step-by-step tutorial: build a full league with brackets, facilities, a court spreadsheet and captain requests in about 20
+                        Follow the step-by-step tutorial: build a full league in your sport with brackets, facilities, a facility spreadsheet and coach or captain requests in about 20
                         minutes. <span className="font-semibold text-accent underline">Open the guide</span>
                     </p>
                 </Link>
@@ -191,14 +199,32 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                     <h2 className="font-display text-2xl font-bold uppercase tracking-wide">New league</h2>
                     <div>
                         <label className="label" htmlFor="league-name">Name</label>
-                        <input id="league-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Spring 2027 Junior Team Tennis" />
+                        <input id="league-name" className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Spring 2027 Youth League" />
                     </div>
+                    {start !== "file" && (
+                        <div>
+                            <label className="label" htmlFor="league-sport">Sport</label>
+                            <select id="league-sport" className="input" value={sport} onChange={(e) => setSport(isSportId(e.target.value) ? e.target.value : "")}>
+                                <option value="">Choose a sport…</option>
+                                {SPORT_IDS.map((id) => (
+                                    <option key={id} value={id}>
+                                        {SPORTS[id].name}
+                                    </option>
+                                ))}
+                            </select>
+                            {sport && (
+                                <p className="mt-1 text-xs text-muted">
+                                    The league will talk about {SPORTS[sport].units}, {SPORTS[sport].time} and {SPORTS[sport].matches}.
+                                </p>
+                            )}
+                        </div>
+                    )}
                     <fieldset className="grid gap-2 text-sm">
                         <legend className="label">Start from</legend>
                         {(
                             [
-                                ["blank", "A blank league", "Set up season dates, brackets, courts and teams yourself."],
-                                ["example", "The example league", "24 made-up teams in 4 brackets, ready to schedule."],
+                                ["blank", "A blank league", "Set up season dates, brackets, facilities and teams yourself."],
+                                ["example", "The example league", "24 made-up teams in 4 brackets, ready to schedule, in your sport."],
                                 ["file", "A backup file", "A .json file downloaded from Season → Download backup."],
                             ] as const
                         ).map(([v, title, hint]) => (

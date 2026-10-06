@@ -42,6 +42,7 @@ import {
     weekendKey,
 } from "./dates.ts";
 import { describeRule, type NameLookup } from "./rules.ts";
+import { termsFor, type Terms } from "./sports.ts";
 import type { Bracket, League, Match, Rule, RuleMode, Team } from "./types.ts";
 
 // ---------------------------------------------------------------------------
@@ -59,6 +60,11 @@ export type Instance = {
     locationId: string;
     capacity: number;
     bracketIds: Set<string> | null;
+    /**
+     * The named units (sheets, fields, courts) free at this time, in order.
+     * Empty when the time just has a number of games at once.
+     */
+    unitIds: string[];
 };
 
 type StaticRuleCheck = { rule: Rule; text: string; test: (inst: Instance) => boolean };
@@ -105,6 +111,8 @@ export type Ctx = {
     clubLimit: number | null;
     clubMode: RuleMode;
     lookup: NameLookup;
+    terms: Terms;
+    unitsPerMatch: number;
     warnings: string[];
 };
 
@@ -124,7 +132,8 @@ export function teamTarget(team: Team, bracket: Bracket | undefined): number {
 export function makeLookup(league: League): NameLookup {
     const t = new Map(league.teams.map((x) => [x.id, x.name]));
     const l = new Map(league.locations.map((x) => [x.id, x.name]));
-    return { team: (id) => t.get(id), location: (id) => l.get(id) };
+    const u = new Map(league.locations.flatMap((x) => (x.units ?? []).map((unit) => [unit.id, unit.name] as const)));
+    return { team: (id) => t.get(id), location: (id) => l.get(id), unit: (id) => u.get(id), terms: termsFor(league.settings.sport) };
 }
 
 function compileStatic(rule: Rule, liveLocations: Set<string>): ((inst: Instance) => boolean) | null {
@@ -209,6 +218,14 @@ export function prepare(league: League): Ctx {
         if (!availByDay.has(d)) availByDay.set(d, []);
         availByDay.get(d)!.push(a);
     }
+    // Unit ids that still exist at that location, in the location's order
+    // (a deleted sheet or field just drops out instead of breaking the slot).
+    const unitOrder = new Map(league.locations.map((l) => [l.id, (l.units ?? []).map((u) => u.id)]));
+    const liveUnits = (locationId: string, ids: string[]) => {
+        if (!ids.length) return [];
+        const want = new Set(ids);
+        return (unitOrder.get(locationId) ?? []).filter((u) => want.has(u));
+    };
     // A season longer than ~2 years is a typo; cap the loop rather than hang the tab.
     for (let d = startDay; d <= endDay && d - startDay < 800; d++) {
         if (blackout.has(d)) continue;
@@ -217,6 +234,10 @@ export function prepare(league: League): Ctx {
         const today: Instance[] = [];
         for (const sl of slots) {
             if (sl.day !== dow || covered.has(`${sl.locationId}|${date}`)) continue;
+            // Named units decide the capacity when the slot names them.
+            const units = liveUnits(sl.locationId, sl.unitIds);
+            const capacity = units.length ? Math.floor(units.length / courtsPerMatch) : Math.floor(sl.capacity);
+            if (capacity <= 0) continue;
             today.push({
                 idx: 0,
                 day: d,
@@ -225,12 +246,14 @@ export function prepare(league: League): Ctx {
                 minutes: toMinutes(sl.time),
                 slotId: sl.id,
                 locationId: sl.locationId,
-                capacity: Math.floor(sl.capacity),
+                capacity,
                 bracketIds: sl.bracketIds.length ? new Set(sl.bracketIds) : null,
+                unitIds: units,
             });
         }
         for (const a of availByDay.get(d) ?? []) {
-            const capacity = Math.floor(a.courts / courtsPerMatch);
+            const units = liveUnits(a.locationId, a.unitIds ?? []);
+            const capacity = Math.floor((units.length || a.courts) / courtsPerMatch);
             if (capacity <= 0) continue;
             today.push({
                 idx: 0,
@@ -242,6 +265,7 @@ export function prepare(league: League): Ctx {
                 locationId: a.locationId,
                 capacity,
                 bracketIds: a.bracketIds.length ? new Set(a.bracketIds) : null,
+                unitIds: units,
             });
         }
         today.sort((x, y) => x.minutes - y.minutes);
@@ -336,6 +360,8 @@ export function prepare(league: League): Ctx {
         clubLimit: s.clubLimit && s.clubLimit > 0 ? Math.floor(s.clubLimit) : null,
         clubMode: s.clubLimitMode,
         lookup,
+        terms: termsFor(s.sport),
+        unitsPerMatch: courtsPerMatch,
         warnings,
     };
 }
@@ -457,7 +483,7 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
     const stop = () => firstHardOnly && hard.length > 0;
 
     if (spot.idx >= 0 && st.used[spot.idx] >= capacity) {
-        hard.push("All courts are already taken at that time");
+        hard.push(`Every ${ctx.terms.unit} is already booked at that time`);
         if (stop()) return { hard, soft };
     }
 
@@ -516,7 +542,7 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
         for (const c of clubsOf(ctx, home, away)) {
             if (clubOverlap(ctx, st, spot.day, spot.minutes, c) + 1 <= ctx.clubLimit) continue;
             const name = ctx.teams.get(home)?.club.trim().toLowerCase() === c ? ctx.teams.get(home)!.team.club : ctx.teams.get(away)!.team.club;
-            const text = `More than ${ctx.clubLimit} ${name} ${ctx.clubLimit === 1 ? "match" : "matches"} on court at the same time`;
+            const text = `More than ${ctx.clubLimit} ${name} ${ctx.clubLimit === 1 ? ctx.terms.match : ctx.terms.matches} at the same time`;
             if (ctx.clubMode === "prefer") soft.push(text);
             else {
                 hard.push(text);
@@ -788,7 +814,7 @@ export function generate(league: League, previous: Match[], opts: GenerateOption
                 if ((got.get(id) ?? 0) < n) {
                     const tc = ctx.teams.get(id)!;
                     shortfalls.push(
-                        `${tc.team.name} gets ${tc.target - n + (got.get(id) ?? 0)} of ${tc.target} matches: ${poolName} has an odd total, so one team must come up one short (or add a team).`
+                        `${tc.team.name} gets ${tc.target - n + (got.get(id) ?? 0)} of ${tc.target} ${ctx.terms.matches}: ${poolName} has an odd total, so one team must come up one short (or add a team).`
                     );
                 }
             }
@@ -874,7 +900,61 @@ export function generate(league: League, previous: Match[], opts: GenerateOption
 
     warnings.push(...best.shortfalls);
     const all = [...kept, ...best.placed, ...best.unplaced];
-    return { matches: sortMatches(all), warnings, needed: neededTotal, placed: best.placed.length, attempts };
+    return { matches: sortMatches(assignUnits(league, all, ctx)), warnings, needed: neededTotal, placed: best.placed.length, attempts };
+}
+
+/**
+ * Gives every placed game at a time with named units (Sheet A, Field 3) its
+ * own unit(s), `unitsPerMatch` of them.
+ *
+ * Stable on purpose: a game that already holds valid, free units keeps them
+ * (locked games first), so a coach told "Sheet B" isn't moved to Sheet A by
+ * an unrelated edit. Only games without a valid unit get the next free ones,
+ * in the facility's order. A time with no named units clears the field.
+ */
+export function assignUnits(league: League, matches: Match[], ctxIn?: Ctx): Match[] {
+    const ctx = ctxIn ?? prepare(league);
+    const byIdx = new Map<number, Match[]>();
+    for (const m of matches) {
+        if (!matchTeamsExist(ctx, m)) continue;
+        const spot = spotForMatch(ctx, m);
+        if (!spot || spot.idx < 0) continue;
+        if (!byIdx.has(spot.idx)) byIdx.set(spot.idx, []);
+        byIdx.get(spot.idx)!.push(m);
+    }
+    const without = (m: Match): Match => {
+        const rest = { ...m };
+        delete rest.unitIds;
+        return rest;
+    };
+    const out = new Map<string, Match>();
+    for (const [idx, ms] of byIdx) {
+        const inst = ctx.instances[idx];
+        if (!inst.unitIds.length) {
+            for (const m of ms) if (m.unitIds) out.set(m.id, without(m));
+            continue;
+        }
+        const free = new Set(inst.unitIds);
+        const need: Match[] = [];
+        const ordered = [...ms].sort((a, b) => Number(b.locked) - Number(a.locked) || a.id.localeCompare(b.id));
+        for (const m of ordered) {
+            const u = m.unitIds ?? [];
+            if (u.length === ctx.unitsPerMatch && u.every((x) => free.has(x))) u.forEach((x) => free.delete(x));
+            else need.push(m);
+        }
+        for (const m of need) {
+            const pick = inst.unitIds.filter((x) => free.has(x)).slice(0, ctx.unitsPerMatch);
+            if (pick.length === ctx.unitsPerMatch) {
+                pick.forEach((x) => free.delete(x));
+                out.set(m.id, { ...m, unitIds: pick });
+            } else if (m.unitIds) out.set(m.id, without(m)); // over capacity: the audit flags it
+        }
+    }
+    return matches.map((m) => {
+        const changed = out.get(m.id);
+        if (changed) return changed;
+        return m.unitIds && !m.date ? without(m) : m;
+    });
 }
 
 export function sortMatches(matches: Match[]): Match[] {
@@ -931,12 +1011,39 @@ export function audit(league: League, matches: Match[]): Audit {
             if (!ctx.league.locations.some((l) => l.id === m.locationId)) v.hard.unshift("Its location was deleted");
             // The facility's own sheet covers this date and has no court time
             // at this hour (or says closed): that's a hard fact, not a taste.
-            else if (ctx.covered.has(`${m.locationId}|${m.date}`)) v.hard.unshift("The facility’s sheet has no court time then");
+            else if (ctx.covered.has(`${m.locationId}|${m.date}`)) v.hard.unshift(`The facility’s sheet has no ${ctx.terms.time} then`);
             else v.soft.unshift("This time is no longer in the weekly slots or the facility’s availability");
         }
         place(ctx, st, m.home, m.away, spot, 1);
         if (v.hard.length || v.soft.length) issues.set(m.id, v);
     }
+    // Named units: never two games on one unit at the same time, and only
+    // on units that time actually has.
+    const unitUse = new Map<string, string[]>();
+    for (const m of matches) {
+        const spot = spots.get(m.id);
+        if (!spot || spot.idx < 0 || !m.unitIds?.length) continue;
+        const inst = ctx.instances[spot.idx];
+        for (const u of m.unitIds) {
+            const key = `${spot.idx}|${u}`;
+            unitUse.set(key, [...(unitUse.get(key) ?? []), m.id]);
+            if (!inst.unitIds.includes(u)) {
+                const v = issues.get(m.id) ?? { hard: [], soft: [] };
+                v.soft.push(`${ctx.lookup.unit?.(u) ?? "That " + ctx.terms.unit} isn’t listed as free at that time`);
+                issues.set(m.id, v);
+            }
+        }
+    }
+    for (const [key, ids] of unitUse) {
+        if (ids.length < 2) continue;
+        const name = ctx.lookup.unit?.(key.slice(key.indexOf("|") + 1)) ?? "A " + ctx.terms.unit;
+        for (const id of ids) {
+            const v = issues.get(id) ?? { hard: [], soft: [] };
+            v.hard.push(`${name} has two ${ctx.terms.matches} at once`);
+            issues.set(id, v);
+        }
+    }
+
     const teams = new Map<string, TeamSummary>();
     for (const tc of ctx.teams.values()) {
         teams.set(tc.team.id, { teamId: tc.team.id, target: tc.target, placed: 0, unplaced: 0, weekendMatches: 0, homeMatches: 0 });
@@ -956,7 +1063,8 @@ export function audit(league: League, matches: Match[]): Audit {
     return { issues, teams, usage: st.used, ctx };
 }
 
-export type SpotOption = { inst: Instance; used: number; verdict: Verdict };
+/** `freeUnits`: the named units nobody else holds at that time (empty when the time has none). */
+export type SpotOption = { inst: Instance; used: number; verdict: Verdict; freeUnits: string[] };
 
 /** Every slot in the season, judged for moving `matchId` there, with all other matches in place. */
 export function moveOptions(league: League, matches: Match[], matchId: string): SpotOption[] {
@@ -969,9 +1077,18 @@ export function moveOptions(league: League, matches: Match[], matchId: string): 
         const spot = spotForMatch(ctx, m);
         if (spot) place(ctx, st, m.home, m.away, spot, 1);
     }
+    const taken = new Map<number, Set<string>>();
+    for (const m of matches) {
+        if (m.id === matchId || !m.unitIds?.length || !matchTeamsExist(ctx, m)) continue;
+        const spot = spotForMatch(ctx, m);
+        if (!spot || spot.idx < 0) continue;
+        if (!taken.has(spot.idx)) taken.set(spot.idx, new Set());
+        for (const u of m.unitIds) taken.get(spot.idx)!.add(u);
+    }
     return ctx.instances.map((inst) => ({
         inst,
         used: st.used[inst.idx],
         verdict: check(ctx, st, target.home, target.away, spotOf(inst), inst.capacity, false),
+        freeUnits: inst.unitIds.filter((u) => !taken.get(inst.idx)?.has(u)),
     }));
 }

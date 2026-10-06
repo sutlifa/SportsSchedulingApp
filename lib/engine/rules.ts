@@ -9,6 +9,7 @@
  * "because of that rule I added in September".
  */
 import { DAY_PLURAL, formatRange, formatTime } from "./dates.ts";
+import { countOf, termsFor, type Terms } from "./sports.ts";
 import type { DayOfWeek, Rule, RuleMode, RuleType } from "./types.ts";
 
 export type RuleFieldKind = "count" | "day" | "days" | "ranges" | "time" | "locations" | "teams" | "text";
@@ -126,9 +127,6 @@ export function newRule(type: RuleType, id: string, mode: RuleMode = "must"): Ru
     return { id, mode, type, ...RULE_DEFS[type].defaults() } as Rule;
 }
 
-function plural(n: number, word: string): string {
-    return `${n} ${word}${n === 1 ? "" : "es"}`;
-}
 
 function list(items: string[]): string {
     if (items.length <= 1) return items[0] ?? "";
@@ -138,19 +136,25 @@ function list(items: string[]): string {
 export type NameLookup = {
     team: (id: string) => string | undefined;
     location: (id: string) => string | undefined;
+    /** A unit (sheet / field / court) id -> its name. */
+    unit?: (id: string) => string | undefined;
+    /** The league's sport words; missing = tennis. */
+    terms?: Terms;
 };
 
 /** The rule as a sentence. `lookup` turns ids into names; unknown ids are dropped. */
 export function describeRule(rule: Rule, lookup: NameLookup): string {
+    const t = lookup.terms ?? termsFor(undefined);
+    const plural = (n: number) => countOf(n, t);
     switch (rule.type) {
         case "max_per_weekend":
-            return `At most ${plural(rule.n, "match")} per weekend`;
+            return `At most ${plural(rule.n)} per weekend`;
         case "max_weekend_total":
-            return `At most ${plural(rule.n, "match")} on Sat/Sun all season`;
+            return `At most ${plural(rule.n)} on Sat/Sun all season`;
         case "max_per_week":
-            return `At most ${plural(rule.n, "match")} per week`;
+            return `At most ${plural(rule.n)} per week`;
         case "max_on_day":
-            return `At most ${plural(rule.n, "match")} on ${DAY_PLURAL[rule.day]} all season`;
+            return `At most ${plural(rule.n)} on ${DAY_PLURAL[rule.day]} all season`;
         case "no_days":
             return rule.days.length ? `Not on ${list(rule.days.map((d) => DAY_PLURAL[d]))}` : "No days chosen yet";
         case "only_days":
@@ -170,7 +174,7 @@ export function describeRule(rule: Rule, lookup: NameLookup): string {
             return names.length ? `Not at ${list(names)}` : "No locations chosen yet";
         }
         case "min_days_between":
-            return `At least ${rule.n} day${rule.n === 1 ? "" : "s"} between matches`;
+            return `At least ${rule.n} day${rule.n === 1 ? "" : "s"} between ${t.matches}`;
         case "not_same_time": {
             const names = rule.teamIds.map(lookup.team).filter(Boolean) as string[];
             return names.length ? `Not at the same time as ${list(names)}` : "No teams chosen yet";

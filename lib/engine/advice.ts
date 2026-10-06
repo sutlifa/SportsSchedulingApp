@@ -24,8 +24,11 @@ const make = (tip: string, tab: AdviceTab | null): Advice => ({ tip, tab, tabLab
 
 export function adviceFor(reason: string, league: League): Advice {
     let m: RegExpExecArray | null;
-    if (/^All courts are already taken/.test(reason))
-        return make("Every open time that fits is already full. Add weekly time slots, raise “Matches at once” on a slot, or upload more facility availability.", "courts");
+    if (/^Every .+ is already booked at that time$/.test(reason))
+        return make("Every open time that fits is already full. Add weekly time slots, add more units to a slot, raise its “at once”, or upload more facility availability.", "courts");
+    if ((m = /^(.+) has two .+ at once$/.exec(reason))) return make(`${m[1]} is double-booked. Move one of the two, or regenerate to reassign.`, "courts");
+    if ((m = /^(.+) isn’t listed as free at that time$/.exec(reason)))
+        return make(`${m[1]} isn’t in that time’s free list any more. Move the game to a free unit, or regenerate.`, "courts");
     if ((m = /^This time slot isn’t open to (.+)$/.exec(reason)))
         return make(`Slots are reserved for other brackets. Add ${m[1]} to a slot’s “Open to”, or add time slots for ${m[1]}.`, "courts");
     if ((m = /^(.+) can’t start (before|after) (.+)$/.exec(reason)))
@@ -34,10 +37,10 @@ export function adviceFor(reason: string, league: League): Advice {
         return make(`${m[1]} is limited to certain days. Add ${m[2]} under “Plays on”, or add time slots on the days it does play.`, "brackets");
     if (/ already plays that day$| is already playing at that time$/.test(reason))
         return make("This team’s other matches already use the open days. Add more dates or time slots, or raise “Max matches per team per day”.", "season");
-    if (/^More than \d+ .+ on court at the same time$/.test(reason))
+    if (/^More than \d+ .+ at the same time$/.test(reason))
         return make("The club limit keeps one club’s teams apart. Raise it, set it to “where possible”, or add time slots at other times.", "season");
     if (/^Its location was deleted$/.test(reason)) return make("Move the match to another time, or regenerate to place it again.", "courts");
-    if (/^The facility’s sheet has no court time then$/.test(reason))
+    if (/^The facility’s sheet has no .+ then$/.test(reason))
         return make("The facility’s uploaded sheet doesn’t include this time. Move the match, or upload an updated sheet.", "courts");
     if (/^This time is no longer in the weekly slots/.test(reason))
         return make("The slot this match used was changed or removed. Move it to a current time.", "courts");

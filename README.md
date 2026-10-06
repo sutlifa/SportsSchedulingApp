@@ -1,47 +1,70 @@
-# Courtside: tennis league scheduling
+# Seasonsmith: league and tournament scheduling for any sport
 
-Put in your brackets, facilities, court times, teams and every captain's request, and
-Courtside plans the whole season. It guarantees each team its matches against its own pool,
-never breaks a "must" rule, and explains in plain words anything it couldn't fit and how
-to fix it.
+Put in your brackets, facilities (and their sheets, fields or courts), booked times, teams and
+every coach's or captain's request, and Seasonsmith plans the whole season, or a tournament's
+pool play. It guarantees each team its games against its own pool, never breaks a "must"
+rule, puts every game on a named sheet, field or court, and explains in plain words anything
+it couldn't fit and how to fix it.
 
-**Using the app? Open the in-app guide at [`/guide`](app/guide/page.tsx).** It is linked from
-the header of the site and has a step-by-step tutorial (with a sample facility spreadsheet)
-that builds a complete league in about 20 minutes, plus a reference for every error message.
+It works for hockey, soccer, tennis, pickleball, basketball, volleyball, baseball, softball,
+lacrosse, football and any other sport. Each league uses its own sport's words: *ice time* and
+*Sheet A* for hockey, *field time* and *Field 3* for soccer, *court time* and *matches* for tennis.
+
+**Using the app? Open the in-app guide at `/guide`** ([source](components/guide/GuideContent.tsx)).
+It's linked from the header and footer, and its tutorial follows whichever sport you pick. The
+tutorial builds a complete league in about 20 minutes, with a sample facility spreadsheet in that
+sport. The guide also explains every error message.
 
 ---
 
 ## What it does
 
-- **Brackets and pools.** Age groups (10U, 12U…) on one schedule, each with its own guaranteed
-  number of matches, start-time window ("10U never after 5:30 PM") and allowed days. Pools
-  split a bracket; teams only play their own pool.
-- **Facilities.** One or many locations, each with an address and a Google Maps pin.
-- **Court times.** Weekly time slots (day, start, location, *matches at once*, optionally only
-  for some brackets), plus **facility spreadsheets** (.xlsx, .csv or pasted cells, in any
-  layout) that set exact courts for specific dates.
-- **Captain requests as rules,** each *Must* or *Prefer*: max matches per weekend / week /
-  weekday, max weekend matches all season, days they can or can't play, unavailable dates,
-  latest/earliest start, only/not at certain locations, days between matches, not at the
-  same time / same day as another team, plus free-text notes.
-- **Balancing.** Spreads each team's matches across the season (teams don't play every week),
-  limits how many of one club's matches are on court at once, and spreads load across slots.
-- **Hand edits.** Move any match to a time that fits (the list says which rules each time
-  would break), swap home/away, lock matches so regenerating keeps them, regenerate one
-  bracket at a time.
-- **Explained problems.** Each match that couldn't be placed lists what ruled out the most
+- **Sports and their words.** Each league picks a sport, which sets the words used everywhere:
+  the booked time (ice / field / court / gym time), the playing areas (sheets, fields, courts),
+  games or matches, and coaches or captains. It also sets a sensible default game length.
+- **Brackets and pools.** Age groups (10U, 12U…) on one schedule. Each has its own number of
+  guaranteed games, its own start-time window ("10U never after 5:30 PM") and its own allowed
+  days. Pools split a bracket, and teams only play within their pool.
+- **Facilities with named units.** A facility (say, an ice arena) contains named or numbered
+  playing areas (Sheet A, Sheet B). Number them in one click ("Field 1" × 6), and every
+  scheduled game is assigned its own unit.
+- **Weekly time slots.** Each slot has a day, a start time, a facility, and which units are free.
+  Slots can be limited to some brackets.
+- **Facility spreadsheets.** Import .xlsx, .csv or pasted cells, in any layout: one row per
+  slot, one row per sheet or field, or a grid. These set exact availability for specific dates.
+  The importer guesses the layout and shows its guess for you to correct before anything is
+  saved.
+- **Coach and captain requests as rules.** Each rule is *Must* or *Prefer*:
+  - max games per weekend, week or weekday, and max weekend games all season
+  - days they can or can't play, and unavailable dates
+  - latest and earliest start
+  - only at, or not at, certain facilities
+  - days between games
+  - not at the same time, or on the same day, as another team
+  - free-text notes
+- **Balancing.** Spreads each team's games across the season (teams don't play every week),
+  limits how many of one club's games are on at once, and spreads load across slots.
+- **Hand edits.**
+  - Move any game to a time that fits; the list says which rules each time would break.
+  - Pick or change its sheet, field or court, and swap home and away.
+  - Lock games so regenerating keeps them, and regenerate one bracket at a time.
+- **Explained problems.** Each game that couldn't be placed lists what ruled out the most
   times, what to change, and a button to the tab where you change it.
-- **Exports.** CSV for Excel/Sheets, per-team text for captains, full backups (JSON).
-- **Never loses work.** Saves are versioned (a stale tab can't overwrite newer work), every
-  change to a cloud league is also kept in the browser, and backups open in any copy of the app.
+- **Exports.** CSV for Excel or Sheets (with a sheet/field/court column), per-team text for
+  coaches and captains, and full backups (JSON).
+- **Never loses work.**
+  - Saves are versioned, so a stale tab can't overwrite newer work.
+  - Every change to a cloud league is also kept in the browser.
+  - Backups open in any copy of the app.
 
 ## Using it
 
 | Where | What |
 | --- | --- |
-| `/` | Your leagues: create (blank, example league, or from a backup), open, restore backup copies. |
-| `/league/<id>` | The league: **Schedule · Teams · Brackets & pools · Courts & times · Season** tabs. |
-| `/guide` | How it works, the tutorial, facility sheet rules, rule reference, every error and its fix. |
+| `/` | Your leagues: create (pick the sport; blank, example league, or from a backup), open, restore backup copies. |
+| `/league/<id>` | The league: **Schedule · Teams · Brackets & pools · Facilities & *ice/field/court* time · Season** tabs. |
+| `/guide` | How it works, the tutorial in your sport (`/guide?sport=hockey`), spreadsheet rules, rule reference, every error and its fix. |
+| `/about`, `/privacy` | What the app is; what it stores and where (linked in the footer). |
 | `/signin` | Google sign-in (only when the site is connected to its database). |
 
 ## Two modes
@@ -60,8 +83,8 @@ npm install
 npm run dev            # http://localhost:3004, browser-only mode with zero setup
 ```
 
-To work offline or if the hosted site is unavailable: run it locally, then on the home page
-choose **New league → A backup file** to open a backup downloaded from the hosted site.
+To work offline, or when the hosted site is unavailable, run it locally. Then, on the home
+page, choose **New league → A backup file** to open a backup downloaded from the hosted site.
 
 ## Configuration (cloud mode)
 
@@ -78,14 +101,14 @@ Google OAuth client settings:
 
 - Authorized JavaScript origin: `https://<your-domain>`
 - Authorized redirect URI: `https://<your-domain>/api/auth/callback/google`
-- For local dev, also `http://localhost:3004` and `http://localhost:3004/api/auth/callback/google`.
+- For local dev, also add `http://localhost:3004` and `http://localhost:3004/api/auth/callback/google`.
 - While the consent screen is in **Testing**, add every person who needs to sign in under
-  **Google Auth Platform → Audience → Test users**. There is no allowlist in the app: any
-  account that can sign in gets its own private leagues.
+  **Google Auth Platform → Audience → Test users**. The app has no allowlist: any account
+  that can sign in gets its own private leagues.
 
 ## Troubleshooting
 
-The in-app guide's **[Errors and how to fix them](app/guide/page.tsx)** section covers every
+The in-app guide's **Errors and how to fix them** section (`/guide#errors`) covers every
 message. The most common setup problems:
 
 | Symptom | Cause | Fix |
@@ -101,39 +124,44 @@ message. The most common setup problems:
 ## Development
 
 Stack: Next.js 16 (App Router), React 19, TypeScript (strict), Tailwind v4, Auth.js v5 (Google,
-JWT), postgres.js + Neon. Read [`CLAUDE.md`](CLAUDE.md) before changing anything. It explains
+JWT), postgres.js and Neon. Read [`CLAUDE.md`](CLAUDE.md) before changing anything. It explains
 the architecture and the rules that keep it correct.
 
 ```bash
 npm run lint && npm run typecheck && npm run build   # must pass with NO env vars
-npm run verify          # scheduler + import invariants (~25k checks incl. fuzzing)
+npm run verify          # scheduler + import invariants (~36k checks incl. fuzzing, every sport)
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/<throwaway> npm run verify:db
                         # persistence: ownership, versioned saves, soft delete (local DB only)
+npm run sheets          # regenerate the guide's sample facility sheets (needs python3 + openpyxl)
 ```
 
-End-to-end tutorial check (drives the `/guide` tutorial in a real browser and verifies every
-expected result). Playwright is intentionally not a dependency; install it anywhere:
+The end-to-end tutorial check drives the `/guide` tutorial in a real browser, in each sport, and
+verifies every expected result. Playwright is intentionally not a dependency, so install it
+anywhere:
 
 ```bash
 npm run build && npx next start -p 3004 &
 (mkdir -p /tmp/pw && cd /tmp/pw && npm i playwright)
-PLAYWRIGHT_MODULE=/tmp/pw/node_modules/playwright/index.mjs \
+PLAYWRIGHT_MODULE=/tmp/pw/node_modules/playwright/index.mjs SPORTS=hockey,soccer,tennis \
   node --experimental-strip-types --no-warnings scripts/e2e/tutorial.mjs
 ```
 
-If you change the guide's tutorial or any UI label it mentions, update and re-run
-`scripts/e2e/tutorial.mjs`.
+If you change the guide's tutorial, any UI label it mentions, or the sample sheets, update and
+re-run `scripts/e2e/tutorial.mjs`.
 
 Layout:
 
 ```
-app/                 routes: / (leagues), /league/[id], /guide, /signin, /api/leagues
-components/          LeagueList, workspace/ (the league editor tabs, dialogs)
-lib/engine/          pure scheduler: types, dates, rules, engine, advice, sanitize, sample
+app/                 routes: / (leagues), /league/[id], /guide, /about, /privacy, /signin, /api/leagues
+components/          LeagueList, SiteHeader/SiteFooter, guide/ (the guide), workspace/ (the league editor)
+lib/brand.ts         the product name, in one place
+lib/engine/          pure scheduler: types, sports (each sport's words), dates, rules, engine, advice, sanitize, sample
 lib/import/          facility spreadsheets: xlsx reader, CSV/paste, layout guessing
-lib/                 db, leagues (queries), guard (API auth + error refs), client/ (stores)
-public/tutorial/     the tutorial's sample facility spreadsheet
+lib/                 db, leagues (queries), guard (API auth + error refs), client/ (stores, backups)
+public/tutorial/     the guide's sample facility sheets, one per sport (scripts/make-tutorial-sheets.py)
 scripts/             verify-*.ts (headless invariants), e2e/tutorial.mjs, migrate.ts
 ```
 
-Deploying: push to `main`; Vercel builds and deploys it.
+Deploying: push to `main`, and Vercel builds and deploys it. The repository is still named
+`SportsSchedulingApp`. The app was first called Courtside, so old backups and browser storage
+keys keep that name on purpose (see `lib/client/backup.ts` and `lib/client/store.ts`).

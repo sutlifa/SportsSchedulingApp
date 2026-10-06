@@ -8,7 +8,10 @@
 // one team four matches and another six, and nobody notices until a parent
 // emails. So every promise is asserted here, on fixed scenarios AND on a few
 // hundred randomly generated leagues. Exits non-zero on the first failure.
-import { audit, generate, moveOptions, pairPool, mulberry32, poolKey } from "../lib/engine/engine.ts";
+import { assignUnits, audit, generate, moveOptions, pairPool, mulberry32, poolKey } from "../lib/engine/engine.ts";
+import { describeRule } from "../lib/engine/rules.ts";
+import { makeLookup } from "../lib/engine/engine.ts";
+import { SPORT_IDS, sportText, SPORTS } from "../lib/engine/sports.ts";
 import { dowOf, isoToDay, isWeekend, parseTimes, toMinutes, weekendKey, formatTime } from "../lib/engine/dates.ts";
 import { sampleLeague } from "../lib/engine/sample.ts";
 import { adviceFor } from "../lib/engine/advice.ts";
@@ -134,7 +137,7 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
         assert(v?.hard.some((h) => h.includes("per weekend")), "audit flags Aces 10U playing twice in one weekend");
     }
     const crowd = r.matches.map((m) => ({ ...m, date: "2027-03-06", time: "09:00", slotId: "s-sat-0", locationId: "loc-center" }));
-    assert(audit(league, crowd).usage[0] > 3 && [...audit(league, crowd).issues.values()].some((v) => v.hard.some((h) => h.includes("courts"))), "audit flags an over-capacity slot");
+    assert(audit(league, crowd).usage[0] > 3 && [...audit(league, crowd).issues.values()].some((v) => v.hard.some((h) => h.includes("already booked"))), "audit flags an over-capacity slot");
 
     // --- move options agree with audit --------------------------------------
     const target = r.matches[0];
@@ -142,7 +145,8 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
     const ok = opts.filter((o) => o.verdict.hard.length === 0);
     assert(ok.length > 0, "move: a placed match has at least one legal spot (its own)");
     for (const o of ok.slice(0, 20)) {
-        const moved = r.matches.map((m) => (m.id === target.id ? { ...m, date: o.inst.date, time: o.inst.time, slotId: o.inst.slotId, locationId: o.inst.locationId } : m));
+        // As the Move dialog does: the moved game takes a free unit at its new time.
+        const moved = r.matches.map((m) => (m.id === target.id ? { ...m, date: o.inst.date, time: o.inst.time, slotId: o.inst.slotId, locationId: o.inst.locationId, unitIds: o.freeUnits.slice(0, 1) } : m));
         const v = audit(league, moved).issues.get(target.id);
         assert(!v || v.hard.length === 0, "move: a spot offered as legal audits as legal");
     }
@@ -204,10 +208,10 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
 {
     const t = (id: string): Team => ({ id, name: id, bracketId: "b", pool: "", club: "", captain: "", contact: "", matches: null, rules: [], notes: "" });
     const league: League = {
-        settings: { seasonStart: "2027-03-06", seasonEnd: "2027-04-04", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "must", courtsPerMatch: 1 },
+        settings: { sport: "tennis", seasonStart: "2027-03-06", seasonEnd: "2027-04-04", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: null, clubLimitMode: "must", courtsPerMatch: 1 },
         brackets: [{ id: "b", name: "B", matches: 5, earliest: "", latest: "", days: [], color: "#000", rules: [{ id: "r", mode: "must", type: "max_per_weekend", n: 1 }] }],
-        locations: [{ id: "l", name: "L", address: "", mapUrl: "", notes: "" }],
-        slots: [{ id: "s", day: 6, time: "10:00", locationId: "l", capacity: 3, bracketIds: [] }],
+        locations: [{ id: "l", name: "L", address: "", mapUrl: "", notes: "", units: [] }],
+        slots: [{ id: "s", day: 6, time: "10:00", locationId: "l", capacity: 3, unitIds: [], bracketIds: [] }],
         availability: [],
         teams: ["a", "b", "c", "d", "e", "f"].map(t),
     };
@@ -248,16 +252,16 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
         const slots = [];
         const nSlots = 2 + Math.floor(rng() * 8);
         for (let s = 0; s < nSlots; s++)
-            slots.push({ id: `s${s}`, day: Math.floor(rng() * 7) as DayOfWeek, time: pick(["09:00", "10:30", "13:00", "17:00", "19:00"]), locationId: pick(["l1", "l2"]), capacity: 1 + Math.floor(rng() * 3), bracketIds: rng() < 0.2 ? ["x"] : [] });
+            slots.push({ id: `s${s}`, day: Math.floor(rng() * 7) as DayOfWeek, time: pick(["09:00", "10:30", "13:00", "17:00", "19:00"]), locationId: pick(["l1", "l2"]), capacity: 1 + Math.floor(rng() * 3), unitIds: [], bracketIds: rng() < 0.2 ? ["x"] : [] });
         const league: League = {
-            settings: { seasonStart: "2027-03-01", seasonEnd: "2027-05-30", blackouts: [{ from: "2027-04-03" }], maxPerDay: pick([1, 1, 2]), matchMinutes: 90, clubLimit: pick([null, 1, 2]), clubLimitMode: pick(["must", "prefer"]), courtsPerMatch: 1 },
+            settings: { sport: "tennis", seasonStart: "2027-03-01", seasonEnd: "2027-05-30", blackouts: [{ from: "2027-04-03" }], maxPerDay: pick([1, 1, 2]), matchMinutes: 90, clubLimit: pick([null, 1, 2]), clubLimitMode: pick(["must", "prefer"]), courtsPerMatch: 1 },
             brackets: [
                 { id: "x", name: "X", matches: 5, earliest: "", latest: pick(["", "18:00"]), days: [], color: "#000", rules: [] },
                 { id: "y", name: "Y", matches: 4, earliest: pick(["", "10:00"]), latest: "", days: rng() < 0.2 ? [6, 0] : [], color: "#000", rules: [] },
             ],
             locations: [
-                { id: "l1", name: "L1", address: "", mapUrl: "", notes: "" },
-                { id: "l2", name: "L2", address: "", mapUrl: "", notes: "" },
+                { id: "l1", name: "L1", address: "", mapUrl: "", notes: "", units: [] },
+                { id: "l2", name: "L2", address: "", mapUrl: "", notes: "", units: [] },
             ],
             slots,
             availability: [],
@@ -278,10 +282,10 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
     // Club limit counts OVERLAPPING matches, not just identical start times.
     const t = (id: string, club: string, pool: string): Team => ({ id, name: id, bracketId: "b", pool, club, captain: "", contact: "", matches: 1, rules: [], notes: "" });
     const league: League = {
-        settings: { seasonStart: "2027-03-06", seasonEnd: "2027-03-06", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: 1, clubLimitMode: "must", courtsPerMatch: 1 },
+        settings: { sport: "tennis", seasonStart: "2027-03-06", seasonEnd: "2027-03-06", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: 1, clubLimitMode: "must", courtsPerMatch: 1 },
         brackets: [{ id: "b", name: "B", matches: 1, earliest: "", latest: "", days: [], color: "#000", rules: [] }],
-        locations: [{ id: "l", name: "L", address: "", mapUrl: "", notes: "" }],
-        slots: ["09:00", "09:30", "10:00", "11:00"].map((time, i) => ({ id: `s${i}`, day: 6 as DayOfWeek, time, locationId: "l", capacity: 4, bracketIds: [] })),
+        locations: [{ id: "l", name: "L", address: "", mapUrl: "", notes: "", units: [] }],
+        slots: ["09:00", "09:30", "10:00", "11:00"].map((time, i) => ({ id: `s${i}`, day: 6 as DayOfWeek, time, locationId: "l", capacity: 4, unitIds: [], bracketIds: [] })),
         availability: [],
         teams: [t("r1", "Riverside", "1"), t("x1", "", "1"), t("r2", "Riverside", "2"), t("x2", "", "2"), t("r3", "Riverside", "3"), t("x3", "", "3")],
     };
@@ -301,6 +305,50 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
     const placed = rs.matches.find((m) => m.date)!;
     const gone = rs.matches.map((m) => (m.id === placed.id ? { ...m, locationId: "deleted-location", slotId: "nope" } : m));
     assert(audit(sl, gone).issues.get(placed.id)?.hard.includes("Its location was deleted"), "deleted location is a hard issue");
+}
+
+// --- named units (sheets / fields / courts) ------------------------------------------
+{
+    for (const sport of SPORT_IDS) {
+        const league = sampleLeague(sport);
+        const r = fixedRun(league);
+        checkInvariants(league, r.matches, `units ${sport}`);
+        const seen = new Set<string>();
+        for (const m of r.matches) {
+            assert(m.unitIds?.length === 1, `${sport}: every placed game gets one unit (${m.id})`);
+            const loc = league.locations.find((l) => l.id === m.locationId)!;
+            assert(loc.units.some((u) => u.id === m.unitIds![0]), `${sport}: the unit belongs to the game's facility`);
+            const key = `${m.date}|${m.time}|${m.unitIds![0]}`;
+            assert(!seen.has(key), `${sport}: no unit holds two games at once`);
+            seen.add(key);
+        }
+        assert(league.locations[0].units[0].name === SPORTS[sport].unitLabel(0), `${sport}: sample units use the sport's naming`);
+    }
+    // Stable: re-assigning keeps every existing (valid) unit.
+    const league = sampleLeague("hockey");
+    const r = fixedRun(league);
+    assert(JSON.stringify(assignUnits(league, r.matches)) === JSON.stringify(r.matches), "assignUnits is stable");
+    // A hand-made double booking is a must-level problem, named by unit.
+    const [a1, a2] = r.matches.filter((m) => m.locationId === "loc-center");
+    const clash = r.matches.map((m) => (m.id === a2.id ? { ...m, date: a1.date, time: a1.time, slotId: a1.slotId, unitIds: a1.unitIds } : m));
+    assert(audit(league, clash).issues.get(a2.id)?.hard.some((h) => h === "Sheet A has two games at once" || /^Sheet [A-C] has two games at once$/.test(h)), "double-booked sheet is flagged in hockey words");
+    // Two units per game: 3 sheets -> 1 game at once, each holding 2 sheets.
+    const two = sampleLeague("hockey");
+    two.settings.courtsPerMatch = 2;
+    const r2 = fixedRun(two);
+    checkInvariants(two, r2.matches, "two units per game");
+    assert(r2.matches.filter((m) => m.date).every((m) => m.unitIds?.length === 2), "two units per game assigned");
+    // Each sport speaks its own words, and every message still gets advice.
+    const tight = sampleLeague("hockey");
+    tight.slots = tight.slots.filter((x) => x.id === "s-sat-0").map((x) => ({ ...x, unitIds: [x.unitIds[0]] }));
+    const rt = fixedRun(tight);
+    const reasons = rt.matches.flatMap((m) => (m.blockers ?? []).map((b) => b.reason));
+    assert(reasons.includes("Every sheet is already booked at that time"), `hockey capacity message: ${[...new Set(reasons)].join(" | ")}`);
+    for (const reason of reasons) assert(adviceFor(reason, tight).tab !== null, `advice for “${reason}”`);
+    assert(describeRule({ id: "x", mode: "must", type: "max_per_weekend", n: 1 }, makeLookup(tight)) === "At most 1 game per weekend", "hockey rule sentence");
+    assert(describeRule({ id: "x", mode: "must", type: "max_per_weekend", n: 2 }, makeLookup(sampleLeague("tennis"))) === "At most 2 matches per weekend", "tennis rule sentence");
+    assert(sportText("Copy for the captain: 3 matches", SPORTS.soccer) === "Copy for the coach: 3 games", "sportText");
+    assert(adviceFor("Sheet B has two games at once", tight).tab === "courts" && adviceFor("More than 2 Northside games at the same time", tight).tab === "season", "new messages have advice");
 }
 
 // --- performance: a big league stays interactive ----------------------------------

@@ -172,11 +172,11 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     const before = prepare(league).instances.filter((i) => i.date === "2027-03-06" && i.locationId === loc);
     eq(before.map((i) => i.time), ["09:00", "11:00", "13:00", "15:00"], "weekly pattern before upload");
     league.availability = [
-        { id: "a1", date: "2027-03-06", time: "10:00", locationId: loc, courts: 6, bracketIds: [] },
-        { id: "a2", date: "2027-03-06", time: "12:00", locationId: loc, courts: 0, bracketIds: [] },
-        { id: "a3", date: "2027-03-13", time: "08:00", locationId: loc, courts: 0, bracketIds: [] },
-        { id: "a4", date: "2027-03-27", time: "09:00", locationId: loc, courts: 4, bracketIds: [] }, // blackout weekend
-        { id: "a5", date: "2027-03-06", time: "10:00", locationId: "gone", courts: 4, bracketIds: [] }, // deleted location
+        { id: "a1", date: "2027-03-06", time: "10:00", locationId: loc, courts: 6, unitIds: [], bracketIds: [] },
+        { id: "a2", date: "2027-03-06", time: "12:00", locationId: loc, courts: 0, unitIds: [], bracketIds: [] },
+        { id: "a3", date: "2027-03-13", time: "08:00", locationId: loc, courts: 0, unitIds: [], bracketIds: [] },
+        { id: "a4", date: "2027-03-27", time: "09:00", locationId: loc, courts: 4, unitIds: [], bracketIds: [] }, // blackout weekend
+        { id: "a5", date: "2027-03-06", time: "10:00", locationId: "gone", courts: 4, unitIds: [], bracketIds: [] }, // deleted location
     ];
     league.settings.courtsPerMatch = 2;
     const ctxE = prepare(league);
@@ -239,7 +239,7 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     const league = sampleLeague();
     league.slots = [];
     league.availability = ["09:00", "11:00", "13:00", "15:00"].flatMap((time) =>
-        ["2027-03-06", "2027-03-13", "2027-03-20", "2027-04-03", "2027-04-10", "2027-04-17", "2027-04-24", "2027-05-01", "2027-05-08", "2027-05-15"].map((date) => ({ id: `a${date}${time}`.replace(/[-:]/g, ""), date, time, locationId: "loc-center", courts: 3, bracketIds: [] }))
+        ["2027-03-06", "2027-03-13", "2027-03-20", "2027-04-03", "2027-04-10", "2027-04-17", "2027-04-24", "2027-05-01", "2027-05-08", "2027-05-15"].map((date) => ({ id: `a${date}${time}`.replace(/[-:]/g, ""), date, time, locationId: "loc-center", courts: 3, unitIds: [], bracketIds: [] }))
     );
     const first = generate(league, [], { scope: "all", seed: 4, maxAttempts: 10, timeBudgetMs: 1e9, now: () => 0 });
     const locked = first.matches.map((m) => ({ ...m, locked: m.date !== null }));
@@ -255,6 +255,38 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     const booked = locked.find((m) => m.date)!;
     league.availability = league.availability.map((a) => (a.date === booked.date && a.time === booked.time ? { ...a, courts: 0 } : a));
     ok(audit(league, locked).issues.get(booked.id)?.hard.includes("The facility’s sheet has no court time then"), "closed by the facility = hard flag");
+}
+
+// --- other sports' words, and named units ---------------------------------------------
+{
+    const ice = parseDelimited("Date,Start,Sheet\n3/6/2027,7:00 AM,Sheet A\n3/6/2027,7:00 AM,Sheet B\n3/6/2027,8:30 AM,Sheet A\n3/6/2027,10:00 AM,Tournament\n");
+    const im = guessMapping(ice, ctx);
+    eq([im.courts, im.courtsMode], [2, "names"], "a 'Sheet' column of 'Sheet A/B' is one row per sheet");
+    eq(parseWith(ice, im, ctx).rows.map((r) => [r.time, r.courts, r.units ?? null]), [["07:00", 2, ["Sheet A", "Sheet B"]], ["08:30", 1, ["Sheet A"]], ["10:00", 0, null]], "sheet names travel with each time; Tournament closes 10:00");
+    const fields = parseDelimited("Date,Time,Field\n3/6/2027,9:00,Field 3\n3/6/2027,9:00,Field 4\n3/6/2027,9:00,field 3\n");
+    const fr = parseWith(fields, guessMapping(fields, ctx), ctx).rows;
+    eq([fr[0].courts, fr[0].units], [2, ["Field 3", "Field 4"]], "field names counted once each, first spelling kept");
+    const counts = parseDelimited("Date,Time,Fields available\n3/6/2027,9:00,4\n3/6/2027,11:00,2\n");
+    const cm2 = guessMapping(counts, ctx);
+    eq([cm2.courts, cm2.courtsMode, parseWith(counts, cm2, ctx).rows.map((r) => r.courts)], [2, "count", [4, 2]], "'Fields available' is a count column");
+    eq([readCourts("Tournament sheets A-B"), readCourts("Clinic Sheet B")], [0, undefined], "closed words vs a unit's name, in hockey words");
+}
+
+// --- the guide's per-sport sample sheets read exactly as the tutorial promises --------
+{
+    const { SPORT_IDS } = await import("../lib/engine/sports.ts");
+    for (const sp of SPORT_IDS)
+        for (const kind of ["xlsx", "csv"] as const) {
+            const file = new URL(`../public/tutorial/${sp}-april-2027.${kind}`, import.meta.url);
+            const rows = kind === "xlsx" ? (await readXlsx(readFileSync(file)))[0].rows : parseDelimited(readFileSync(file, "utf8"));
+            const m = guessMapping(rows, ctx);
+            const r = parseWith(rows, m, ctx);
+            eq(
+                [m.layout, m.header, m.courtsMode, r.rows.length, new Set(r.rows.map((x) => x.date)).size, r.rows.filter((x) => x.courts === 0).length, r.problems.length],
+                ["rows", kind === "xlsx" ? 2 : 0, "names", 12, 5, 2, 0],
+                `${sp}-april-2027.${kind}: 12 slots on 5 dates, 2 closed, one row per unit`
+            );
+        }
 }
 
 // --- map pin links: real Google Maps only (Tester bug #3) ---------------------------

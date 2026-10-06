@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadText, fileSafe, makeBackup } from "@/lib/client/backup";
 import { storeFor, writeMirror, type LeagueRecord, type LeagueStore, type Mode } from "@/lib/client/store";
 import { audit, makeLookup } from "@/lib/engine/engine";
+import { termsFor } from "@/lib/engine/sports";
 import BracketsTab from "./BracketsTab";
 import CourtsTab from "./CourtsTab";
 import ScheduleTab from "./ScheduleTab";
@@ -60,11 +61,12 @@ type Status =
     | { kind: "error"; message: string }
     | { kind: "conflict"; message: string; current: LeagueRecord };
 
-const TABS: { id: Tab; label: string }[] = [
+/** Tab names. The facilities tab is named for the sport: "Facilities & ice time". */
+const tabsFor = (time: string): { id: Tab; label: string }[] => [
     { id: "schedule", label: "Schedule" },
     { id: "teams", label: "Teams" },
     { id: "brackets", label: "Brackets & pools" },
-    { id: "courts", label: "Courts & times" },
+    { id: "courts", label: `Facilities & ${time}` },
     { id: "season", label: "Season" },
 ];
 
@@ -210,7 +212,8 @@ function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode;
 
     const result = useMemo(() => audit(doc.data, doc.schedule.matches), [doc.data, doc.schedule.matches]);
     const lookup = useMemo(() => makeLookup(doc.data), [doc.data]);
-    const props: TabProps = { doc, change, result, lookup, goTo: setTab, mode };
+    const t = termsFor(doc.data.settings.sport);
+    const props: TabProps = { doc, change, result, lookup, goTo: setTab, mode, t };
 
     return (
         <div>
@@ -223,18 +226,22 @@ function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode;
                             </Link>
                             <span className="text-muted">/</span>
                             <h1 className="truncate font-display text-2xl font-bold uppercase tracking-wide">{doc.name}</h1>
+                            <span className="chip shrink-0 bg-surface-2 text-muted">{t.name}</span>
+                            <Link href={`/guide?sport=${t.id}`} className="shrink-0 text-sm text-accent underline">
+                                Help
+                            </Link>
                         </div>
                         <SaveStatus status={status} mode={mode} />
                     </div>
                     <nav className="-mb-px mt-2 flex gap-1 overflow-x-auto" aria-label="League sections">
-                        {TABS.map((t) => (
+                        {tabsFor(t.time).map((x) => (
                             <button
-                                key={t.id}
-                                onClick={() => setTab(t.id)}
-                                aria-current={tab === t.id ? "page" : undefined}
-                                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === t.id ? "border-accent text-fg" : "border-transparent text-muted hover:text-fg"}`}
+                                key={x.id}
+                                onClick={() => setTab(x.id)}
+                                aria-current={tab === x.id ? "page" : undefined}
+                                className={`whitespace-nowrap border-b-2 px-3 py-2 text-sm font-semibold ${tab === x.id ? "border-accent text-fg" : "border-transparent text-muted hover:text-fg"}`}
                             >
-                                {t.label}
+                                {x.label}
                             </button>
                         ))}
                     </nav>

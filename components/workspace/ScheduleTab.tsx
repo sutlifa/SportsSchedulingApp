@@ -6,6 +6,8 @@ import { DAY_SHORT, dowOf, formatDate, formatTime, isIsoDate, isoToDay, weekKey 
 import { adviceFor } from "@/lib/engine/advice";
 import { generate, type Verdict } from "@/lib/engine/engine";
 import { mapSearchUrl } from "@/lib/engine/sanitize";
+import { cap, sportText } from "@/lib/engine/sports";
+import { unitNames } from "./CourtsTab";
 import type { League, Location, Match } from "@/lib/engine/types";
 import MoveDialog from "./MoveDialog";
 import type { TabProps } from "./types";
@@ -19,7 +21,8 @@ export function locationLink(l: Location | undefined): string | null {
     return l.address || l.name ? mapSearchUrl(l.name, l.address) : null;
 }
 
-export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabProps) {
+export default function ScheduleTab({ doc, change, result, lookup, goTo, t: terms }: TabProps) {
+    const w = (text: string) => sportText(text, terms);
     const { data, schedule } = doc;
     const [scope, setScope] = useState("all");
     const [confirming, setConfirming] = useState(false);
@@ -40,8 +43,8 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
     // --- setup checklist ---------------------------------------------------
     const todo: { text: string; tab: Parameters<typeof goTo>[0] }[] = [];
     if (!isIsoDate(data.settings.seasonStart) || !isIsoDate(data.settings.seasonEnd)) todo.push({ text: "Set the season’s first and last day", tab: "season" });
-    if (!data.brackets.length) todo.push({ text: "Add age brackets (10U, 12U…) and how many matches each team gets", tab: "brackets" });
-    if (!data.locations.length || !data.slots.length) todo.push({ text: "Add locations and weekly time slots with court capacity", tab: "courts" });
+    if (!data.brackets.length) todo.push({ text: w("Add age brackets (10U, 12U…) and how many matches each team gets"), tab: "brackets" });
+    if (!data.locations.length || !data.slots.length) todo.push({ text: `Add facilities and weekly ${terms.time} (or upload a facility sheet)`, tab: "courts" });
     if (data.teams.length < 2) todo.push({ text: "Add teams", tab: "teams" });
 
     // --- generation --------------------------------------------------------
@@ -98,7 +101,8 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
     // --- exports ------------------------------------------------------------
     const line = (m: Match, forTeam?: string) => {
         const l = m.locationId ? locations.get(m.locationId) : undefined;
-        const where = l ? `${l.name}${l.address ? `, ${l.address}` : ""}` : "";
+        const units = unitNames(m.unitIds, data);
+        const where = l ? `${l.name}${units ? ` (${units})` : ""}${l.address ? `, ${l.address}` : ""}` : "";
         const who = forTeam
             ? `vs ${teamName(forTeam === m.home ? m.away : m.home)} (${forTeam === m.home ? "home" : "away"})`
             : `${teamName(m.home)} vs ${teamName(m.away)}`;
@@ -119,7 +123,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
             const t = String(s ?? "");
             return `"${(/^[=+\-@]/.test(t) ? `'${t}` : t).replace(/"/g, '""')}"`;
         };
-        const rows = [["Date", "Day", "Start", "Bracket", "Pool", "Home", "Away", "Location", "Address", "Map", "Locked", "Status"]];
+        const rows = [["Date", "Day", "Start", "Bracket", "Pool", "Home", "Away", "Facility", cap(terms.unit), "Address", "Map", "Locked", "Status"]];
         for (const m of schedule.matches) {
             const l = m.locationId ? locations.get(m.locationId) : undefined;
             rows.push([
@@ -131,6 +135,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                 teamName(m.home),
                 teamName(m.away),
                 l?.name ?? "",
+                unitNames(m.unitIds, data),
                 l?.address ?? "",
                 locationLink(l) ?? "",
                 m.locked ? "yes" : "",
@@ -190,7 +195,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                 </div>
                 {lastRun && (
                     <p className="w-full text-sm text-muted">
-                        Placed {lastRun.placed} of {lastRun.needed} new matches (best of {lastRun.attempts} tries, {lastRun.seconds.toFixed(1)}s). Locked matches were kept as they were.
+                        Placed {lastRun.placed} of {lastRun.needed} new {terms.matches} (best of {lastRun.attempts} tries, {lastRun.seconds.toFixed(1)}s). Locked {terms.matches} were kept as they were.
                         {lastRun.placed < lastRun.needed && (
                             <strong className="text-warn"> {lastRun.needed - lastRun.placed} couldn’t be placed: the reasons and fixes are listed below.</strong>
                         )}
@@ -201,7 +206,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
 
             {schedule.matches.length > 0 && (
                 <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <Stat label="Matches placed" value={`${placed.length}`} sub={`of ${schedule.matches.length}`} />
+                    <Stat label={`${cap(terms.matches)} placed`} value={`${placed.length}`} sub={`of ${schedule.matches.length}`} />
                     <Stat label="Not placed" value={`${unplaced.length}`} tone={unplaced.length ? "warn" : "ok"} />
                     <Stat label="Break a must-rule" value={`${mustIssues}`} tone={mustIssues ? "danger" : "ok"} sub={preferIssues ? `${preferIssues} miss a preference` : undefined} />
                     <Stat label="Teams short" value={`${short.length}`} tone={short.length ? "warn" : "ok"} sub={short.length ? "fewer than guaranteed" : "everyone’s covered"} />
@@ -224,7 +229,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                     <h3 className="font-display text-xl font-bold uppercase tracking-wide text-warn">Couldn’t place ({unplaced.length})</h3>
                     <p className="text-sm text-muted">
                         Every open time was checked for each of these. Below are the reasons that ruled out the most times, and what to change. After a fix, press
-                        Regenerate. Or place a match by hand, which locks it.
+                        Regenerate. Or place a {terms.match} by hand, which locks it.
                     </p>
                     {unplaced.map((m) => (
                         <div key={m.id} className="card flex flex-wrap items-start justify-between gap-3 border-warn/40 p-3">
@@ -279,7 +284,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                                 [
                                     ["dates", "By date"],
                                     ["teams", "By team"],
-                                    ["courts", "Court use"],
+                                    ["courts", `${cap(terms.unit)} use`],
                                 ] as const
                             ).map(([v, label]) => (
                                 <button key={v} aria-pressed={view === v} onClick={() => setView(v)} className={`px-3 py-1.5 text-sm font-semibold ${view === v ? "bg-accent text-accent-fg" : "bg-surface text-muted hover:text-fg"}`}>
@@ -328,10 +333,10 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
             {confirming && (
                 <Modal title="Regenerate?" onClose={() => setConfirming(false)}>
                     <p>
-                        This replaces <strong>{replaceable}</strong> unlocked {replaceable === 1 ? "match" : "matches"} in {scope === "all" ? "all brackets" : brackets.get(scope)?.name}.
-                        {lockedInScope > 0 && ` ${lockedInScope} locked ${lockedInScope === 1 ? "match stays" : "matches stay"} exactly where ${lockedInScope === 1 ? "it is" : "they are"}.`}
+                        This replaces <strong>{replaceable}</strong> unlocked {replaceable === 1 ? terms.match : terms.matches} in {scope === "all" ? "all brackets" : brackets.get(scope)?.name}.
+                        {lockedInScope > 0 && ` ${lockedInScope} locked ${lockedInScope === 1 ? `${terms.match} stays` : `${terms.matches} stay`} exactly where ${lockedInScope === 1 ? "it is" : "they are"}.`}
                     </p>
-                    <p className="mt-2 text-sm text-muted">Moving a match by hand locks it, so hand-placed matches are never lost to a regenerate.</p>
+                    <p className="mt-2 text-sm text-muted">{w("Moving a match by hand locks it, so hand-placed matches are never lost to a regenerate.")}</p>
                     <div className="mt-5 flex justify-end gap-2">
                         <button className="btn-ghost" onClick={() => setConfirming(false)}>
                             Cancel
@@ -364,7 +369,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
     // render, which would remount them and drop focus/open <details>.
 
     function renderDates(matches: Match[]) {
-        if (!matches.length) return <p className="text-muted">No matches match these filters.</p>;
+        if (!matches.length) return <p className="text-muted">No {terms.matches} fit these filters.</p>;
         const byDate = new Map<string, Match[]>();
         for (const m of matches) {
             if (!byDate.has(m.date!)) byDate.set(m.date!, []);
@@ -378,7 +383,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                             <h4 className="font-display text-lg font-bold uppercase tracking-wide">{formatDate(date, true)}</h4>
                             <span className="text-xs font-semibold uppercase tracking-wide text-muted tabular">
                                 {weekNo(date) !== null && `Week ${weekNo(date)} · `}
-                                {ms.length} {ms.length === 1 ? "match" : "matches"}
+                                {ms.length} {ms.length === 1 ? terms.match : terms.matches}
                             </span>
                         </div>
                         <ul className="divide-y divide-border">
@@ -411,17 +416,18 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                     <div className="mt-0.5 truncate text-sm text-muted">
                         {href ? (
                             <a href={href} target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-fg">
-                                {l?.name ?? "Unknown location"}
+                                {l?.name ?? "Unknown facility"}
                             </a>
                         ) : (
-                            (l?.name ?? "Unknown location")
+                            (l?.name ?? "Unknown facility")
                         )}
+                        {m.unitIds?.length ? <span className="font-semibold text-fg"> · {unitNames(m.unitIds, data)}</span> : null}
                     </div>
                     <Issues v={v} />
                     {v?.hard.length ? <FixHint reason={v.hard[0]} league={data} /> : null}
                 </div>
                 <div className="flex flex-wrap gap-1">
-                    <button className="btn-ghost btn-sm" onClick={() => setMatch(m.id, { locked: !m.locked })} title={m.locked ? "Let regenerate move this match" : "Keep this match when regenerating"}>
+                    <button className="btn-ghost btn-sm" onClick={() => setMatch(m.id, { locked: !m.locked })} title={w(m.locked ? "Let regenerate move this match" : "Keep this match when regenerating")}>
                         {m.locked ? "Unlock" : "Lock"}
                     </button>
                     <button className="btn-secondary btn-sm" onClick={() => setMoving(m.id)}>
@@ -453,7 +459,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 text-sm tabular">
                                     <span className={`chip ${s && s.placed < s.target ? "bg-warn-soft text-warn" : "bg-ok-soft text-ok"}`}>
-                                        {s?.placed ?? 0}/{s?.target ?? 0} matches
+                                        {s?.placed ?? 0}/{s?.target ?? 0} {terms.matches}
                                     </span>
                                     <span className="chip bg-surface-2">{s?.weekendMatches ?? 0} on weekends</span>
                                     <span className="chip bg-surface-2">{s?.homeMatches ?? 0} home</span>
@@ -470,7 +476,7 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                                     ))}
                                 </ul>
                                 <button className="btn-secondary btn-sm mt-3" onClick={async () => notify((await copyText(teamText(t.id))) ? `Copied ${t.name}’s schedule` : "Copy was blocked by the browser")}>
-                                    Copy for the captain
+                                    Copy for the {terms.captain}
                                 </button>
                             </div>
                         </details>

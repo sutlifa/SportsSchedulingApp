@@ -7,9 +7,10 @@
  * lib/engine/engine.ts (`audit`) -- nothing derived is ever stored, so it can
  * never drift out of step with the inputs that produced it.
  *
- * Pure types, no imports: this file is shared by client components, API
- * routes and the node verify scripts.
+ * Pure types: this file is shared by client components, API routes and the
+ * node verify scripts.
  */
+import type { SportId } from "./sports.ts";
 
 /** 0 = Sunday ... 6 = Saturday, matching `Date#getUTCDay`. */
 export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -63,9 +64,18 @@ export type Bracket = {
     rules: Rule[];
 };
 
+/**
+ * One named playing area inside a facility: "Sheet A" in an ice arena,
+ * "Field 3" at a soccer complex, "Court 2" in a gym. Optional -- a facility
+ * with no units just has a number of games at once per time slot.
+ */
+export type Unit = { id: string; name: string };
+
 export type Location = {
     id: string;
     name: string;
+    /** The facility's sheets / fields / courts, in display order. */
+    units: Unit[];
     address: string;
     /** A Google Maps link to the exact pin, pasted by the user. Optional. */
     mapUrl: string;
@@ -78,8 +88,14 @@ export type Slot = {
     day: DayOfWeek;
     time: string;
     locationId: string;
-    /** How many matches can be on at once in this slot. */
+    /** How many games can be on at once in this slot (ignored when unitIds names the units). */
     capacity: number;
+    /**
+     * Which of the location's units are free in this slot. When set, games at
+     * once = units / settings.courtsPerMatch, and each game is assigned
+     * specific units. Empty = an unnamed `capacity`.
+     */
+    unitIds: string[];
     /** Brackets allowed in this slot. Empty = all brackets. */
     bracketIds: string[];
 };
@@ -98,6 +114,8 @@ export type Availability = {
     time: string;
     locationId: string;
     courts: number;
+    /** The named units free at this time, when the facility's sheet names them. */
+    unitIds: string[];
     /** Brackets allowed. Empty = all brackets. */
     bracketIds: string[];
 };
@@ -119,6 +137,8 @@ export type Team = {
 };
 
 export type Settings = {
+    /** Decides the wording everywhere (lib/engine/sports.ts). Missing = tennis. */
+    sport: SportId;
     seasonStart: string;
     seasonEnd: string;
     /** Dates nobody plays (holidays, facility closures). */
@@ -159,6 +179,8 @@ export type Match = {
     time: string | null;
     locationId: string | null;
     slotId: string | null;
+    /** The specific units (sheet, field, court) this game is on, when the time names them. */
+    unitIds?: string[];
     /** Locked matches survive a regenerate untouched. Moving a match locks it. */
     locked: boolean;
     /** Why an unplaced match could not be placed. */

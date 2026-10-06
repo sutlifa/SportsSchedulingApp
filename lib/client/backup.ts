@@ -1,16 +1,24 @@
 "use client";
 
 import { sanitizeLeague, sanitizeSchedule } from "@/lib/engine/sanitize";
+import { APP_NAME } from "@/lib/brand";
 import type { League, Schedule } from "@/lib/engine/types";
 
 /**
  * Backup file format. Versioned and tagged so an unrelated JSON file is
  * refused with a clear message instead of loading as an empty league.
+ *
+ * The app was first called Courtside; backups made then carry that tag and
+ * must keep loading forever, so both tags are accepted. New backups use the
+ * current one.
  */
-export type Backup = { format: "courtside-league"; version: 1; name: string; exportedAt: string; data: League; schedule: Schedule };
+const FORMAT = "seasonsmith-league";
+const FORMATS_ACCEPTED = new Set([FORMAT, "courtside-league"]);
+
+export type Backup = { format: string; version: 1; name: string; exportedAt: string; data: League; schedule: Schedule };
 
 export function makeBackup(name: string, data: League, schedule: Schedule): string {
-    const b: Backup = { format: "courtside-league", version: 1, name, exportedAt: new Date().toISOString(), data, schedule };
+    const b: Backup = { format: FORMAT, version: 1, name, exportedAt: new Date().toISOString(), data, schedule };
     return JSON.stringify(b, null, 2);
 }
 
@@ -19,9 +27,9 @@ export function parseBackup(text: string): { name: string; data: League; schedul
     try {
         j = JSON.parse(text) as Record<string, unknown>;
     } catch {
-        throw new Error("That file isn’t a Courtside backup (it isn’t valid JSON).");
+        throw new Error(`That file isn’t a ${APP_NAME} backup (it isn’t valid JSON).`);
     }
-    if (!j || j.format !== "courtside-league") throw new Error("That file isn’t a Courtside backup.");
+    if (!j || typeof j.format !== "string" || !FORMATS_ACCEPTED.has(j.format)) throw new Error(`That file isn’t a ${APP_NAME} backup.`);
     return {
         name: typeof j.name === "string" && j.name.trim() ? j.name.trim().slice(0, 120) : "Imported league",
         data: sanitizeLeague(j.data),

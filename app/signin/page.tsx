@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
 import { isCloudConfigured } from "@/lib/authConfig";
+import { APP_NAME } from "@/lib/brand";
 
 export const metadata = { title: "Sign in" };
 
@@ -47,7 +48,7 @@ export default async function SignInPage({ searchParams }: { searchParams: Promi
             <h1 className="font-display text-4xl font-bold uppercase tracking-wide">Sign in</h1>
             <p className="mt-2 text-muted">Sign in to save your leagues and open them from any device. Your leagues are private to your account.</p>
             <p className="mt-2 text-sm text-muted">
-                New to Courtside?{" "}
+                New to {APP_NAME}?{" "}
                 <Link href="/guide" className="font-semibold text-accent underline">
                     Read the guide and tutorial
                 </Link>{" "}

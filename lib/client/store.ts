@@ -117,6 +117,8 @@ export const cloudStore: LeagueStore = {
 
 // ---------------------------------------------------------------------------
 
+// Kept from the app's first name on purpose: renaming the product must never
+// make someone's browser-saved leagues disappear. Don't "tidy" these keys.
 const KEY = "tennis-scheduler.leagues.v1";
 
 type LocalDb = Record<string, LeagueRecord>;
@@ -228,7 +230,7 @@ export async function browserLeagues(): Promise<LeagueRecord[]> {
 // Keyed per signed-in account: on a shared computer, one person's leagues
 // (captain phone numbers included) must never show up for the next person.
 // Signing out clears every mirror in this browser (clearAllMirrors).
-const MIRROR_PREFIX = "courtside.mirror.";
+const MIRROR_PREFIX = "courtside.mirror."; // first-name key, kept on purpose (see KEY above)
 const mirrorKey = (userKey: string) => `${MIRROR_PREFIX}v2.${userKey}`;
 const MIRROR_MAX = 15;
 

@@ -44,7 +44,12 @@ export type Mapping = {
     label: number;
 };
 
-export type ParsedRow = { date: string; time: string; courts: number; location: string | null; line: number };
+/**
+ * `units`: the named sheets / fields / courts free at that time, as written in
+ * the sheet ("Sheet A"), when it lists them one per row. The import attaches
+ * them to the facility's units (creating any it doesn't have yet).
+ */
+export type ParsedRow = { date: string; time: string; courts: number; location: string | null; line: number; units?: string[] };
 export type Problem = { line: number; message: string };
 export type ParseResult = { rows: ParsedRow[]; problems: Problem[]; duplicates: number };
 
@@ -252,7 +257,7 @@ export function readTime(c: Cell): string | null {
  * a range ("Tournament courts 1-6", "Lesson Court 5-6") is a closure note. Note "3 (1 held for lessons)"
  * doesn't start with a closed word, so its leading number wins.
  */
-const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b(?!\s*(court|ct\.?)(\s*#?\s*\d+[a-z]?)?\s*$)/i;
+const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b(?!\s*(court|ct\.?|sheet|field|fld|rink|diamond|pitch|gym)(\s*#?\s*(\d+[a-z]?|[a-z]))?\s*$)/i;
 
 /** Courts available. null = blank (no slot); 0 = explicitly closed. undefined = unreadable. */
 export function readCourts(c: Cell): number | null | undefined {
@@ -284,7 +289,8 @@ export function readCourts(c: Cell): number | null | undefined {
 const KEYWORDS: Record<"date" | "time" | "courts" | "location", RegExp> = {
     date: /\bdate\b|^day$|^dates?$/i,
     time: /time|start|slot|hour/i,
-    courts: /court|avail|^#|qty|count|number|^cts?\b/i,
+    // Every sport's word for a playing area: "Courts", "Sheets", "Fields"...
+    courts: /court|avail|^#|qty|count|number|^cts?\b|sheet|field|rink|ice|diamond|pitch|gym|space/i,
     location: /locat|facility|site|venue|club|park|center|centre|^where$/i,
 };
 
@@ -370,14 +376,16 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     // A bare number only counts as a time when its column is headed like one
     // ("Start": 9, 13); otherwise 4 is a court count, not 4pm.
     const time = pick(KEYWORDS.time, (c, col) => !looksLikeDate(c, ctx) && readTime(c) !== null && (typeof c !== "number" || c < 1 || KEYWORDS.time.test(headText(col))), 0.5);
-    const courts = pick(KEYWORDS.courts, (c) => readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx)), 0.6);
+    // A playing-area column holds counts ("4") or names ("Sheet A", "Field 3").
+    const courts = pick(KEYWORDS.courts, (c) => (typeof c === "string" && SINGLE_COURT.test(c.trim())) || (readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx))), 0.6);
     let location: number | null = null;
     for (let c = 0; c < width; c++) if (!taken.has(c) && KEYWORDS.location.test(headText(c))) location = c;
     return { ...base, header, date, time, courts, location, courtsMode: guessCourtsMode(grid, header, courts) };
 }
 
 /** "Court 7", "Ct. 3", "#4": a reference to ONE court, not a count. */
-const SINGLE_COURT = /^(court|ct)\.?\s*#?\s*\d+[a-z]?$|^#\s*\d+$/i;
+/** "Court 7", "Sheet A", "Field 3", "Ct. 2", "#4": ONE unit, not a count. */
+const SINGLE_COURT = /^(court|ct|sheet|field|fld|rink|diamond|pitch|gym|space)\.?\s*#?\s*(\d+[a-z]?|[a-z])$|^#\s*\d+$/i;
 
 /**
  * Count vs names -- deliberately conservative, because guessing "names" on a
@@ -392,7 +400,7 @@ const SINGLE_COURT = /^(court|ct)\.?\s*#?\s*\d+[a-z]?$|^#\s*\d+$/i;
 function guessCourtsMode(grid: Cell[][], header: number, courts: number | null): "count" | "names" {
     if (courts === null) return "count";
     const head = header >= 0 ? cellText(grid[header][courts] ?? null).trim() : "";
-    if (/^(court|ct)\.?\s*(#|no\.?|number|name)?$/i.test(head)) return "names";
+    if (/^(court|ct|sheet|field|fld|rink|diamond|pitch|gym|space)\.?\s*(#|no\.?|number|name)?$/i.test(head)) return "names";
     let named = 0;
     let filled = 0;
     for (const row of grid.slice(header + 1, header + 201)) {
@@ -403,7 +411,7 @@ function guessCourtsMode(grid: Cell[][], header: number, courts: number | null):
         const t = c.trim();
         // Only things that look like a court's NAME: "Court 7", "#4", or words
         // like "Stadium" / "Center Court". "All", "TBD" or "Hard 4" are not.
-        if (SINGLE_COURT.test(t) || (!/\d/.test(t) && /\bcourts?\b|stadium|grandstand/i.test(t) && !CLOSED_CELL.test(t))) named++;
+        if (SINGLE_COURT.test(t) || (!/\d/.test(t) && /\b(courts?|fields?|sheets?|rinks?|diamonds?|pitch(es)?|gyms?)\b|stadium|grandstand/i.test(t) && !CLOSED_CELL.test(t))) named++;
     }
     return filled > 0 && named / filled >= 0.5 ? "names" : "count";
 }
@@ -429,7 +437,7 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
     // Location casing varies within one sheet ("Riverside Main" / "riverside
     // main"); the same court time must not be counted twice because of it.
     const keyOf = (row: { date: string; time: string; location: string | null }) => `${row.date}|${row.time}|${(row.location ?? "").trim().toLowerCase()}`;
-    const named = new Map<string, { row: ParsedRow; names: Set<string> }>();
+    const named = new Map<string, { row: ParsedRow; names: Map<string, string> }>();
     const add = (row: ParsedRow) => {
         const k = keyOf(row);
         if (out.has(k)) duplicates++;
@@ -463,14 +471,18 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
             if (m.courtsMode === "names") {
                 // One row per court: collect distinct court names per time.
                 const k = keyOf({ date: d.date, time, location: loc });
-                const entry = named.get(k) ?? { row: { date: d.date, time, courts: 0, location: loc, line }, names: new Set<string>() };
+                const entry = named.get(k) ?? { row: { date: d.date, time, courts: 0, location: loc, line }, names: new Map<string, string>() };
                 named.set(k, entry);
-                if (m.courts === null) entry.names.add(`row ${line}`);
+                if (m.courts === null) entry.names.set(`row ${line}`, "");
                 else {
                     const c = row[m.courts];
                     if (isBlank(c)) problem(line, "No court named");
                     // Only a whole-cell "closed" marker is skipped; "Clinic Court" is a court.
-                    else if (!(typeof c === "string" && (CLOSED_CELL.test(c.trim()) || /^(-|–|—|x|closed|none|n\/?a)$/i.test(c.trim())))) entry.names.add(cellText(c).toLowerCase());
+                    else if (!(typeof c === "string" && (CLOSED_CELL.test(c.trim()) || /^(-|–|—|x|closed|none|n\/?a)$/i.test(c.trim())))) {
+                        // First spelling wins ("Field 3" over a later "field 3").
+                        const key = cellText(c).toLowerCase();
+                        if (!entry.names.has(key)) entry.names.set(key, cellText(c));
+                    }
                     // a "closed" row adds no court but still marks the time as covered (0)
                 }
                 continue;
@@ -479,11 +491,11 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
             if (m.courts !== null) {
                 courts = readCourts(row[m.courts]);
                 if (courts === undefined) {
-                    problem(line, `Couldn’t read the number of courts “${cellText(row[m.courts])}”`);
+                    problem(line, `Couldn’t read how many are free: “${cellText(row[m.courts])}”`);
                     continue;
                 }
                 if (courts === null) {
-                    problem(line, "No number of courts");
+                    problem(line, "Nothing listed as free");
                     continue;
                 }
             }
@@ -524,7 +536,7 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                 const courts = readCourts(row[col.c]);
                 if (courts === null) continue;
                 if (courts === undefined) {
-                    problem(line, `Couldn’t read the number of courts “${cellText(row[col.c])}”`);
+                    problem(line, `Couldn’t read how many are free: “${cellText(row[col.c])}”`);
                     continue;
                 }
                 const date = m.layout === "dates-down" ? label : col.date!;
@@ -533,7 +545,11 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
             }
         }
     }
-    for (const { row, names } of named.values()) add({ ...row, courts: names.size });
+    for (const { row, names } of named.values()) {
+        // Real names (not the "row N" stand-ins used when there's no court column) travel with the row.
+        const real = [...names.values()].filter(Boolean);
+        add({ ...row, courts: names.size, ...(real.length === names.size && real.length ? { units: real } : {}) });
+    }
     const rows = [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
     return { rows, problems, duplicates };
 }
