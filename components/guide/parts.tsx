@@ -27,6 +27,14 @@ export function useGuideSport(): [SportId, (s: SportId) => void] {
         }
         if (isSportId(wanted)) {
             const next = wanted;
+            // Remember a ?sport= link too (a league's Help link), so the
+            // other page -- reached from the header, without ?sport= --
+            // opens in the same sport.
+            try {
+                window.localStorage.setItem(STORE_KEY, next);
+            } catch {
+                // ignore
+            }
             void Promise.resolve().then(() => setSport(next));
         }
     }, []);

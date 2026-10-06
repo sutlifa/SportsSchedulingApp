@@ -187,7 +187,22 @@ export function BracketChip({ bracket }: { bracket: Bracket | undefined }) {
     );
 }
 
+/**
+ * A whole-number field that shows exactly what's being typed.
+ *
+ * While focused it keeps its own draft text, and only reports a number once
+ * the draft is a valid one, so:
+ *  - clearing it doesn't snap a caller's fallback (`v ?? 1`) into the box and
+ *    turn the next "3" into "13";
+ *  - typing "45" into a min-15 field isn't clamped to 15 at the "4";
+ *  - "015" reads as "15" as you type it.
+ * On blur the draft is dropped and the box shows the stored value again:
+ * blank becomes the caller's fallback (or stays blank where blank means
+ * something, like "no limit"), and out-of-range numbers are clamped.
+ */
 export function NumberInput({ id, value, onChange, min = 0, max = 99, placeholder, className = "input w-24" }: { id?: string; value: number | null; onChange: (v: number | null) => void; min?: number; max?: number; placeholder?: string; className?: string }) {
+    const [draft, setDraft] = useState<string | null>(null);
+    const clamp = (n: number) => Math.min(max, Math.max(min, Math.round(n)));
     return (
         <input
             id={id}
@@ -197,22 +212,25 @@ export function NumberInput({ id, value, onChange, min = 0, max = 99, placeholde
             max={max}
             className={className}
             placeholder={placeholder}
-            value={value ?? ""}
+            value={draft ?? (value ?? "")}
             // Selecting on focus means typing replaces the number, instead of
             // landing next to it ("5" + "15" = "515").
             onFocus={(e) => e.target.select()}
             onChange={(e) => {
-                const v = e.target.value;
-                if (v === "") return onChange(null);
-                const num = Math.round(Number(v));
-                if (!Number.isFinite(num)) return;
-                const next = Math.min(max, Math.max(min, num));
-                // React leaves a number input's text alone when it parses to
-                // the value it already has, so "015" (typed after a cleared
-                // field fell back to 0) stayed on screen as 015. Write the
-                // clean number back whenever the text differs from it.
-                if (v !== String(next)) e.target.value = String(next);
-                onChange(next);
+                const raw = e.target.value.replace(/^0+(?=\d)/, "");
+                setDraft(raw);
+                if (raw === "") return onChange(null);
+                const n = Number(raw);
+                // Below the minimum is usually a number still being typed
+                // ("4" on the way to "45"): wait for blur rather than clamp.
+                if (Number.isFinite(n) && n >= min) onChange(clamp(n));
+            }}
+            onBlur={() => {
+                if (draft !== null && draft !== "") {
+                    const n = Number(draft);
+                    if (Number.isFinite(n)) onChange(clamp(n));
+                }
+                setDraft(null);
             }}
         />
     );

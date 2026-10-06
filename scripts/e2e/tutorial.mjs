@@ -1,6 +1,6 @@
 // scripts/e2e/tutorial.mjs
 //
-// Walks the /guide tutorial in a real browser, word for word -- same league
+// Walks the /tutorial page in a real browser, word for word -- same league
 // name, dates, brackets, facilities and their units, times, sample sheet,
 // team lists and requests -- in each sport given, and checks every "You
 // should see". If the guide or the UI changes, this is what notices that
@@ -110,6 +110,21 @@ async function walk(sport, t) {
         await see("Sat, Mar 6, 2027 to Sun, May 16, 2027, about 11 weeks.");
         await see("Sat, Mar 27 – Sun, Mar 28");
         await see(`${cap(t.units)} used by one ${t.match}`);
+        // Number fields show what's typed (Tester finds): typing 45 into the
+        // min-15 length field isn't clamped at the "4", and clearing a field
+        // whose blank falls back to 1 doesn't turn a typed 3 into 13.
+        await page.locator("#match-minutes").click();
+        await page.keyboard.type("45");
+        ok((await page.locator("#match-minutes").inputValue()) === "45", `typed 45: ${await page.locator("#match-minutes").inputValue()}`);
+        await page.locator("#max-per-day").click();
+        await page.keyboard.press("Backspace");
+        await page.keyboard.type("3");
+        ok((await page.locator("#max-per-day").inputValue()) === "3", `typed 3: ${await page.locator("#max-per-day").inputValue()}`);
+        await page.locator("#max-per-day").fill("");
+        await page.locator("#season-start").click(); // blur: blank falls back to 1
+        ok((await page.locator("#max-per-day").inputValue()) === "1", "blank max-per-day falls back to 1 on leaving it");
+        await page.locator("#match-minutes").fill(String(t.minutes));
+        await page.locator("#season-start").click();
         ok((await page.getByText("Set the season’s first and last day.").count()) === 0, "the Needed line is gone");
         await goNext("Brackets & pools");
 
@@ -416,6 +431,17 @@ async function walk(sport, t) {
         await page.waitForURL(/\/tutorial$/);
         ok((await page.locator("#how-it-works").count()) === 0, "the tutorial is its own page");
         ok((await site.getByRole("link", { name: "Tutorial", exact: true }).getAttribute("aria-current")) === "page", "Tutorial is marked current");
+        // A ?sport= link (a league's Help) is remembered for the other page.
+        await page.goto(`${BASE}/guide?sport=${sport}`);
+        await see("How it works");
+        await site.getByRole("link", { name: "Tutorial", exact: true }).click();
+        await page.waitForURL(/\/tutorial$/);
+        await page.waitForFunction((s) => document.querySelector("#guide-sport-tutorial")?.value === s, sport);
+        checks++;
+        // Old bookmarks into the tutorial's former place on /guide.
+        await page.goto(`${BASE}/guide#t-create`);
+        await page.waitForURL(/\/tutorial#t-create$/);
+        checks++;
         await page.goto(`${BASE}/tutorial?sport=${sport}`);
         await see(`Spring 2027 Youth ${t.name}`);
         await see(`Imported 12 ${t.time} slots on 5 dates from ${file}.xlsx.`, { exact: false });
