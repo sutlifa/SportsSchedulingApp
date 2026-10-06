@@ -1,0 +1,183 @@
+@import "tailwindcss";
+
+/*
+ * Tailwind v4 is configured entirely here via @theme. There is no
+ * tailwind.config.ts.
+ *
+ * Palette: a hard court. Court blue is the accent, the off-white ground has
+ * a faint green bias (the court surround), and optic yellow -- the ball --
+ * is used in exactly one place, the header baseline, so it stays a mark
+ * rather than a colour scheme. Semantic colours (ok / warn / danger) are
+ * separate from the accent on purpose: "this match breaks a rule" must
+ * never look like "this is a button".
+ *
+ * Light-first, because this is used at a desk during the working day; every
+ * token still gets a considered dark value below.
+ */
+@theme {
+    --color-bg: #f2f5f3;
+    --color-surface: #ffffff;
+    --color-surface-2: #e8eeea;
+    --color-border: #d2dcd6;
+    --color-fg: #142027;
+    --color-muted: #56656d;
+    --color-accent: #1d5a8a;
+    --color-accent-strong: #154670;
+    --color-accent-fg: #ffffff;
+    --color-accent-soft: #dfeaf4;
+    --color-ball: #d2e04a;
+    --color-ok: #2b7a4b;
+    --color-ok-soft: #e0f0e6;
+    --color-warn: #8f5400;
+    --color-warn-soft: #fbefd9;
+    --color-danger: #b3261e;
+    --color-danger-soft: #fbe3e1;
+    --color-focus: #1d5a8a;
+
+    --font-display: var(--font-barlow), "Arial Narrow", system-ui, sans-serif;
+    --font-sans: var(--font-source), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: var(--font-plex), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --color-bg: #0e161d;
+        --color-surface: #152029;
+        --color-surface-2: #1c2a35;
+        --color-border: #2a3a47;
+        --color-fg: #e5ecef;
+        --color-muted: #9aabb5;
+        --color-accent: #6ea8d8;
+        --color-accent-strong: #8cbbe2;
+        --color-accent-fg: #0b1a26;
+        --color-accent-soft: #1a3044;
+        --color-ok: #63c08a;
+        --color-ok-soft: #173326;
+        --color-warn: #e3a24a;
+        --color-warn-soft: #3a2a12;
+        --color-danger: #f08a80;
+        --color-danger-soft: #3d1a17;
+        --color-focus: #8cbbe2;
+        color-scheme: dark;
+    }
+}
+
+:root {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+    border-color: var(--color-border);
+}
+
+body {
+    margin: 0;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+    text-wrap: balance;
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition: none !important;
+        animation: none !important;
+    }
+}
+
+/*
+ * Shared primitives. Tailwind v4's @apply only reaches real utilities, so
+ * each one is declared with @utility (a `@layer components` class can't be
+ * @apply'd into another).
+ */
+@utility btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+@utility btn-primary {
+    @apply btn bg-accent text-accent-fg hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-secondary {
+    @apply btn border border-border bg-surface text-fg hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-ghost {
+    @apply btn bg-transparent text-muted hover:bg-surface-2 hover:text-fg disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-danger {
+    @apply btn border border-danger/40 bg-transparent text-danger hover:bg-danger-soft disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-sm {
+    padding: 0.25rem 0.55rem;
+    font-size: 0.8125rem;
+}
+@utility card {
+    border-radius: 0.75rem;
+    border-width: 1px;
+    border-color: var(--color-border);
+    background-color: var(--color-surface);
+}
+@utility input {
+    width: 100%;
+    min-width: 0;
+    border-radius: 0.5rem;
+    border-width: 1px;
+    border-color: var(--color-border);
+    background-color: var(--color-surface);
+    padding: 0.45rem 0.65rem;
+    font-size: 0.9rem;
+    color: var(--color-fg);
+}
+.input::placeholder {
+    color: var(--color-muted);
+}
+.input:focus-visible {
+    border-color: var(--color-accent);
+}
+@utility label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+}
+@utility chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    border-radius: 999px;
+    padding: 0.1rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25rem;
+    white-space: nowrap;
+}
+@utility tabular {
+    font-variant-numeric: tabular-nums;
+}
