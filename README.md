@@ -129,7 +129,7 @@ the architecture and the rules that keep it correct.
 
 ```bash
 npm run lint && npm run typecheck && npm run build   # must pass with NO env vars
-npm run verify          # scheduler + import invariants (~36k checks incl. fuzzing, every sport)
+npm run verify          # scheduler + import invariants (~32k checks incl. fuzzing, every sport)
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/<throwaway> npm run verify:db
                         # persistence: ownership, versioned saves, soft delete (local DB only)
 npm run sheets          # regenerate the guide's sample facility sheets (needs python3 + openpyxl)

@@ -254,7 +254,7 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     // A booked time the facility's sheet now marks closed is a must-level problem.
     const booked = locked.find((m) => m.date)!;
     league.availability = league.availability.map((a) => (a.date === booked.date && a.time === booked.time ? { ...a, courts: 0 } : a));
-    ok(audit(league, locked).issues.get(booked.id)?.hard.includes("The facility’s sheet has no court time then"), "closed by the facility = hard flag");
+    ok(audit(league, locked).issues.get(booked.id)?.hard.includes("The facility’s spreadsheet has no court time then"), "closed by the facility = hard flag");
 }
 
 // --- other sports' words, and named units ---------------------------------------------

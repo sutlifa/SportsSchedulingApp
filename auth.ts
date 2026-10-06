@@ -38,7 +38,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             if (profile?.sub && profile.email) {
                 token.userId = await upsertUser({ googleId: profile.sub, email: profile.email, name: profile.name ?? null });
             }
-            return token;
+            // Auth.js's default token also carries Google's `picture` URL.
+            // /privacy promises that only the account's id, email and name
+            // are kept, so the cookie holds exactly those (plus our users
+            // row id) and nothing else. iat/exp/jti are re-stamped by
+            // Auth.js when it encodes the token, so they needn't pass here.
+            return { sub: token.sub, email: token.email, name: token.name, userId: token.userId };
         },
         // Auth.js v5 types this callback for both session strategies; with
         // JWT only, the adapter-session branch of that union never happens,

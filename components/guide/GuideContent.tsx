@@ -451,7 +451,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                         </p>
                         <ol>
                             <li>
-                                On <B>{tab}</B>, under <B>Facility availability</B>, press <B>Upload a facility sheet</B> and choose the file.
+                                On <B>{tab}</B>, under <B>Facility availability</B>, press <B>Upload a facility spreadsheet</B> and choose the file.
                             </li>
                             <li>
                                 Check the guess: <B>Layout</B> <em>One row per time slot</em>; <B>Heading row</B> <em>Row 3</em> for the .xlsx (it has a title
@@ -459,7 +459,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                                 <em>
                                     One {t.unit}, by name
                                 </em>
-                                . If a facility’s sheet is read wrongly, change these and the result updates straight away.
+                                . If a facility’s spreadsheet is read wrongly, change these and the result updates straight away.
                             </li>
                             <li>
                                 Set <B>Location</B> to <strong>{fac1}</strong>.
@@ -474,9 +474,9 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             12 {t.time} slots on 5 dates from {file}.xlsx.” and a {short1} card under Facility availability.
                         </Expect>
                         <Tip>
-                            On those 5 dates the sheet <em>replaces</em> {short1}’s weekly {t.time}. On Sunday Apr 11 there’s 11:00 and 1:00 instead of the usual
+                            On those 5 dates the spreadsheet <em>replaces</em> {short1}’s weekly {t.time}. On Sunday Apr 11 there’s 11:00 and 1:00 instead of the usual
                             12:00 and 2:00. On Saturday Apr 10 only 9:00 is open, with {u(0)} and {u(1)}: the tournament closes 11:00, and 1:00 and 3:00 aren’t
-                            listed. Every other date keeps the weekly pattern. The sheet’s {t.unit} names match the ones you added in step 4, so no new ones
+                            listed. Every other date keeps the weekly pattern. The spreadsheet’s {t.unit} names match the ones you added in step 4, so no new ones
                             appear. Press <B>Show dates</B> on the card to check.
                         </Tip>
                     </Step>
@@ -674,8 +674,8 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                     <H3>What an import changes</H3>
                     <p className="max-w-3xl">
                         For each facility and date in the file, the uploaded times <strong>replace</strong> that facility’s weekly {t.time} on that date. Other
-                        dates keep the weekly pattern, and blackout dates still win. Importing again only replaces the dates in the new file, so monthly sheets
-                        can be imported one after another. {Matches} already booked into those times stay attached. <B>Remove upload</B> on a facility’s card
+                        dates keep the weekly pattern, and blackout dates still win. Importing again only replaces the dates in the new file, so monthly spreadsheets
+                        can be imported one after another. {Matches} already booked into those times stay attached, on the same {t.unit} where it’s still free. <B>Remove upload</B> on a facility’s card
                         goes back to its weekly {t.time}.
                     </p>
                 </section>
@@ -751,7 +751,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             [`Riverside Hawks 12U: At most 1 ${t.match} per weekend`, "That team’s own rule rules the times out.", "Loosen the rule, switch it to Prefer, or add slots that fit it (Teams)."],
                             ["Oak Hill Thunder 12U: not at the same time as Oak Hill Thunder 14U", "Two linked teams compete for the same times.", "Switch the rule to Prefer, or add slots at other times (Teams)."],
                             [`More than 2 Riverside ${t.matches} at the same time`, "The club limit (set to “always”) keeps the club’s teams apart.", "Raise the limit or set it to “where possible” (Season)."],
-                            ["There are no time slots in the season to put it in", "No dates or slots exist.", `Check First/Last day, then add weekly ${t.time} or a facility sheet.`],
+                            ["There are no time slots in the season to put it in", "No dates or slots exist.", `Check First/Last day, then add weekly ${t.time} or upload a facility spreadsheet.`],
                         ]}
                     />
                     <H3>Warnings from the last run</H3>
@@ -768,15 +768,24 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                         rows={[
                             ["Breaks: …", "A Must rule is broken, usually after a hand move or after rules or facilities changed.", "Press Move: the list shows times that fit every rule. Or regenerate."],
                             ["Misses preference: …", "A Prefer rule couldn’t be kept.", `Usually fine. Move the ${t.match} if it matters.`],
-                            [`Breaks: ${u(1)} has two ${t.matches} at once`, `Two ${t.matches} were put on the same ${t.unit} (usually by hand).`, `Move one, or use “Change ${t.unit}” in the Move dialog.`],
-                            [`Misses preference: ${u(2)} isn’t listed as free at that time`, `The ${t.unit} was taken out of that slot or sheet.`, `Move the ${t.match} to a free ${t.unit}, or regenerate.`],
-                            [`Breaks: The facility’s sheet has no ${t.time} then`, "A newer facility sheet doesn’t include this time (or marks it closed).", `Move the ${t.match}, or upload a corrected sheet.`],
+                            [
+                                `Breaks: ${u(1)} has two ${t.matches} at once`,
+                                `Two ${t.matches} hold the same ${t.unit}. ${APP_NAME} never does this itself, and sorts it out on the next change to a facility or its times, so it only shows in a schedule saved by an earlier version or restored from an old backup.`,
+                                `Use “Change ${t.unit}” in the Move dialog, or regenerate.`,
+                            ],
+                            [
+                                `Misses preference: No ${t.unit} assigned: every ${t.unit} is booked at that time`,
+                                `A ${t.unit} was removed from the facility or the slot, or “${Units} used by one ${t.match}” went up, and no free ${t.unit} is left at that time. (Where one is free, the ${t.match} moves to it by itself.)`,
+                                `Add a ${t.unit} to that slot, lower “${Units} used by one ${t.match}”, or move the ${t.match} to a time with a free ${t.unit} (${tab}).`,
+                            ],
+                            [`Misses preference: ${u(2)} isn’t listed as free at that time`, `The ${t.unit} was taken out of that slot or that date’s uploaded availability.`, `Move the ${t.match} to a free ${t.unit}, or regenerate.`],
+                            [`Breaks: The facility’s spreadsheet has no ${t.time} then`, "A newer facility spreadsheet doesn’t include this time (or marks it closed).", `Move the ${t.match}, or upload a corrected file.`],
                             ["Breaks: Its location was deleted", "The facility was removed.", `Move the ${t.match} or regenerate.`],
                             ["Misses preference: This time is no longer in the weekly slots…", "Its weekly slot was changed or removed.", "Move it to a current time."],
                         ]}
                     />
 
-                    <H3 id="errors-import">Facility sheet messages</H3>
+                    <H3 id="errors-import">Facility spreadsheet messages</H3>
                     <ErrTable
                         rows={[
                             ["This doesn’t look like an Excel (.xlsx) file.", "The file isn’t a real .xlsx (renamed, or another format).", "Open it in Excel or Google Sheets and save/download as .xlsx or .csv."],
