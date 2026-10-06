@@ -189,7 +189,15 @@ export function safeMapUrl(url: string): string {
         const u = new URL(url.trim());
         if (u.protocol !== "https:") return "";
         const host = u.hostname.toLowerCase();
-        const ok = host === "maps.app.goo.gl" || host === "goo.gl" || /(^|\.)google\.[a-z.]+$/.test(host);
+        const path = u.pathname.toLowerCase();
+        // Exact Google hosts only. A loose "google.*" match would also accept
+        // google.evil.com or maps.google.attacker.io, and goo.gl is a general
+        // shortener, so it is only trusted for its /maps/ links.
+        const googleHost = /^(www\.|maps\.)?google\.(com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/.test(host);
+        const ok =
+            host === "maps.app.goo.gl" ||
+            (host === "goo.gl" && path.startsWith("/maps/")) ||
+            (googleHost && (host.startsWith("maps.") || path.startsWith("/maps")));
         return ok ? u.toString() : "";
     } catch {
         return "";

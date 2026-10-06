@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { parseBackup } from "@/lib/client/backup";
-import { browserLeagues, storeFor, type LeagueSummary, type Mode } from "@/lib/client/store";
+import { downloadText, fileSafe, makeBackup, parseBackup } from "@/lib/client/backup";
+import { browserLeagues, browserStore, readMirrors, storeFor, type LeagueSummary, type Mirror, type Mode } from "@/lib/client/store";
 import { sampleLeague } from "@/lib/engine/sample";
 
 type Start = "blank" | "example" | "file";
@@ -19,6 +19,7 @@ export default function LeagueList({ mode, initial, loadError }: { mode: Mode; i
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState<string | null>(loadError);
     const [localCount, setLocalCount] = useState(0);
+    const [mirrors, setMirrors] = useState<Mirror[]>([]);
 
     // Browser mode can only read its list after mount (localStorage). In cloud
     // mode, count leagues left in this browser so they can be uploaded.
@@ -30,7 +31,10 @@ export default function LeagueList({ mode, initial, loadError }: { mode: Mode; i
                 if (live) setLeagues(l);
             } else {
                 const local = await browserLeagues();
-                if (live) setLocalCount(local.length);
+                if (live) {
+                    setLocalCount(local.length);
+                    setMirrors(readMirrors());
+                }
             }
         })();
         return () => {
@@ -65,10 +69,17 @@ export default function LeagueList({ mode, initial, loadError }: { mode: Mode; i
         setBusy(true);
         setError(null);
         try {
+            // MOVE, not copy: each local league is removed the moment its cloud
+            // copy exists. Removing per league (not after the loop) means a
+            // failure halfway through can be retried without re-uploading the
+            // ones that already went up.
             const local = await browserLeagues();
-            for (const r of local) await store.create(r.name, r.data, r.schedule);
+            for (const r of local) {
+                await store.create(r.name, r.data, r.schedule);
+                await browserStore.remove(r.id);
+                setLocalCount((n) => Math.max(0, n - 1));
+            }
             setLeagues(await store.list());
-            setLocalCount(0);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Upload failed.");
         } finally {
@@ -85,12 +96,59 @@ export default function LeagueList({ mode, initial, loadError }: { mode: Mode; i
                 {mode === "cloud" && localCount > 0 && (
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/30 bg-accent-soft p-3 text-sm">
                         <span>
-                            This browser has {localCount} league{localCount === 1 ? "" : "s"} from before the site was connected.
+                            This browser has {localCount} league{localCount === 1 ? "" : "s"} from before the site was connected. Uploading moves{" "}
+                            {localCount === 1 ? "it" : "them"} into your account.
                         </span>
                         <button className="btn-primary btn-sm" disabled={busy} onClick={uploadLocal}>
                             Upload {localCount === 1 ? "it" : "them"}
                         </button>
                     </div>
+                )}
+
+                {mode === "cloud" && mirrors.length > 0 && (
+                    <details className="card mt-4 p-4" open={Boolean(loadError)}>
+                        <summary className="cursor-pointer font-semibold">
+                            Backup copies in this browser ({mirrors.length})
+                            <span className="block text-sm font-normal text-muted">
+                                Every change you make is also saved here. If the site can’t reach its database, download a backup and keep working.
+                            </span>
+                        </summary>
+                        <ul className="mt-3 divide-y divide-border">
+                            {mirrors.map((m) => (
+                                <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                                    <span className="min-w-0">
+                                        <span className="font-semibold">{m.name}</span>
+                                        <span className="block text-xs text-muted">
+                                            Copied {new Date(m.savedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {m.data.teams.length} teams ·{" "}
+                                            {m.schedule.matches.length} matches
+                                        </span>
+                                    </span>
+                                    <span className="flex flex-wrap gap-2">
+                                        <button className="btn-secondary btn-sm" onClick={() => downloadText(`${fileSafe(m.name)}-backup.json`, makeBackup(m.name, m.data, m.schedule), "application/json")}>
+                                            Download backup
+                                        </button>
+                                        <button
+                                            className="btn-ghost btn-sm"
+                                            disabled={busy}
+                                            onClick={async () => {
+                                                setBusy(true);
+                                                setError(null);
+                                                try {
+                                                    const rec = await store.create(`${m.name} (restored)`, m.data, m.schedule);
+                                                    router.push(`/league/${rec.id}`);
+                                                } catch (err) {
+                                                    setError(err instanceof Error ? err.message : "Couldn’t restore that copy. Download it instead.");
+                                                    setBusy(false);
+                                                }
+                                            }}
+                                        >
+                                            Restore as a new league
+                                        </button>
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </details>
                 )}
 
                 <div className="mt-6 grid gap-3">

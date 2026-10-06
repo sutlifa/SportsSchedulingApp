@@ -9,7 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:migrate": "node --experimental-strip-types scripts/migrate.ts",
-    "verify": "node --experimental-strip-types --no-warnings scripts/verify-engine.ts",
+    "verify": "node --experimental-strip-types --no-warnings scripts/verify-engine.ts && node --experimental-strip-types --no-warnings scripts/verify-import.ts",
     "verify:db": "node --experimental-strip-types --no-warnings --import ./scripts/register-ts.mjs scripts/verify-db.ts"
   },
   "dependencies": {

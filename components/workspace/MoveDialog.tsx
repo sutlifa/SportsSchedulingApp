@@ -61,7 +61,7 @@ export default function MoveDialog({
                     <div className="text-sm text-muted">{match.date ? `Now: ${formatDate(match.date)} · ${formatTime(match.time)} · ${locName(match.locationId ?? "")}` : "Not placed yet"}</div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <button className="btn-secondary btn-sm" onClick={() => onApply({ home: match.away, away: match.home })}>
+                    <button className="btn-secondary btn-sm" onClick={() => onApply({ home: match.away, away: match.home, locked: true })}>
                         Swap home/away
                     </button>
                     {match.date && (

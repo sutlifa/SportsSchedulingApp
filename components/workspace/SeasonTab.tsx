@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { downloadText, fileSafe, makeBackup, parseBackup } from "@/lib/client/backup";
-import type { LeagueStore } from "@/lib/client/store";
+import { removeMirror, type LeagueStore } from "@/lib/client/store";
 import { formatDate, isIsoDate, isoToDay } from "@/lib/engine/dates";
 import { withData, type TabProps } from "./types";
 import { ConfirmButton, Field, NumberInput, RangesInput } from "./ui";
@@ -55,11 +55,14 @@ export default function SeasonTab({ doc, change, leagueId, store }: TabProps & {
                         <NumberInput id="match-minutes" value={s.matchMinutes} min={15} max={600} onChange={(v) => set({ matchMinutes: v ?? 90 })} />
                     </Field>
                 </div>
+                <Field label="Courts used by one match" htmlFor="courts-per-match" hint="Used to turn a facility sheet’s court counts into matches at once. A team match playing 3 lines at once uses 3 courts.">
+                    <NumberInput id="courts-per-match" value={s.courtsPerMatch} min={1} max={20} onChange={(v) => set({ courtsPerMatch: v ?? 1 })} />
+                </Field>
                 <Field label="Same club at the same time" htmlFor="club-limit" hint="Spreads each club’s teams out so one club isn’t on every court at once. Blank = no limit.">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm">At most</span>
                         <NumberInput id="club-limit" value={s.clubLimit} min={1} max={50} onChange={(v) => set({ clubLimit: v })} placeholder="—" className="input w-20" />
-                        <span className="text-sm">matches per club at one start time,</span>
+                        <span className="text-sm">matches per club on court at the same time,</span>
                         <select aria-label="Club limit strictness" className="input w-auto" value={s.clubLimitMode} onChange={(e) => set({ clubLimitMode: e.target.value === "must" ? "must" : "prefer" })}>
                             <option value="prefer">where possible</option>
                             <option value="must">always</option>
@@ -130,6 +133,7 @@ export default function SeasonTab({ doc, change, leagueId, store }: TabProps & {
                         confirmLabel="Yes, delete it"
                         onConfirm={async () => {
                             await store.remove(leagueId);
+                            removeMirror(leagueId);
                             router.push("/");
                         }}
                     />

@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { storeFor, type LeagueRecord, type LeagueStore, type Mode } from "@/lib/client/store";
+import { downloadText, fileSafe, makeBackup } from "@/lib/client/backup";
+import { storeFor, writeMirror, type LeagueRecord, type LeagueStore, type Mode } from "@/lib/client/store";
 import { audit, makeLookup } from "@/lib/engine/engine";
 import BracketsTab from "./BracketsTab";
 import CourtsTab from "./CourtsTab";
@@ -121,6 +122,33 @@ function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: Lea
         return () => clearTimeout(t);
     }, [doc, saveTick, doSave]);
 
+    // Leaving the league inside the app (the "Leagues" link, the logo) unmounts
+    // the editor without a beforeunload, and the debounce timer's cleanup
+    // would drop the last <700ms of edits. Save them on the way out instead.
+    // The request outlives the component: client-side navigation keeps the
+    // page (and its fetch) alive.
+    useEffect(() => {
+        const latestRef = latest;
+        const dirtyRef = dirty;
+        const blockedRef = blocked;
+        const version = versionRef;
+        return () => {
+            if (!dirtyRef.current || blockedRef.current) return;
+            const snap = latestRef.current;
+            void store.save({ id: rec.id, name: snap.name, data: snap.data, schedule: snap.schedule, version: version.current });
+        };
+    }, [store, rec.id]);
+
+    // Cloud leagues are mirrored into this browser on every change (see
+    // writeMirror), so a database outage never strands the person's work.
+    useEffect(() => {
+        if (mode !== "cloud") return;
+        const t = setTimeout(() => writeMirror({ id: rec.id, name: doc.name, data: doc.data, schedule: doc.schedule }), 400);
+        return () => clearTimeout(t);
+    }, [doc, mode, rec.id]);
+
+    const downloadBackup = () => downloadText(`${fileSafe(doc.name)}-backup.json`, makeBackup(doc.name, doc.data, doc.schedule), "application/json");
+
     useEffect(() => {
         const warn = (e: BeforeUnloadEvent) => {
             if (dirty.current || saving.current) e.preventDefault();
@@ -189,10 +217,27 @@ function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: Lea
                             <button className="btn-secondary btn-sm" onClick={() => resolveConflict("theirs")}>
                                 Load their version (drop mine)
                             </button>
+                            <button className="btn-secondary btn-sm" onClick={downloadBackup}>
+                                Download my version
+                            </button>
                             <button className="btn-danger btn-sm" onClick={() => resolveConflict("mine")}>
                                 Keep mine (replace theirs)
                             </button>
                         </span>
+                    </div>
+                </div>
+            )}
+
+            {status.kind === "error" && (
+                <div className="border-b border-warn/30 bg-warn-soft">
+                    <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                        <span>
+                            <strong>Not saved yet:</strong> {status.message}
+                            {mode === "cloud" && " Every change is also kept in this browser, so you can keep working."}
+                        </span>
+                        <button className="btn-secondary btn-sm" onClick={downloadBackup}>
+                            Download backup
+                        </button>
                     </div>
                 </div>
             )}

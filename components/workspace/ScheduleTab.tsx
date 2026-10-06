@@ -112,7 +112,12 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
         setTimeout(() => setFlash(null), 2500);
     };
     const csv = () => {
-        const q = (s: string | number | null | undefined) => `"${String(s ?? "").replace(/"/g, '""')}"`;
+        // Quote every cell; prefix cells starting with = + - @ so Excel shows a
+        // team called "=Bolts" as text instead of running it as a formula.
+        const q = (s: string | number | null | undefined) => {
+            const t = String(s ?? "");
+            return `"${(/^[=+\-@]/.test(t) ? `'${t}` : t).replace(/"/g, '""')}"`;
+        };
         const rows = [["Date", "Day", "Start", "Bracket", "Pool", "Home", "Away", "Location", "Address", "Map", "Locked", "Status"]];
         for (const m of schedule.matches) {
             const l = m.locationId ? locations.get(m.locationId) : undefined;
@@ -131,7 +136,8 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo }: TabPr
                 m.date ? "scheduled" : "not placed",
             ]);
         }
-        downloadText(`${fileSafe(doc.name)}-schedule.csv`, rows.map((r) => r.map(q).join(",")).join("\r\n"), "text/csv");
+        // The BOM tells Excel the file is UTF-8, so accented names survive.
+        downloadText(`${fileSafe(doc.name)}-schedule.csv`, "\uFEFF" + rows.map((r) => r.map(q).join(",")).join("\r\n"), "text/csv");
     };
 
     return (

@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { DAY_LONG, formatTime, parseTimes, toMinutes } from "@/lib/engine/dates";
+import { DAY_LONG, formatDate, formatTime, parseTimes, toMinutes } from "@/lib/engine/dates";
 import { mapSearchUrl, safeMapUrl } from "@/lib/engine/sanitize";
-import type { DayOfWeek, Location, Slot } from "@/lib/engine/types";
+import type { DayOfWeek, Location, Rule, Slot } from "@/lib/engine/types";
+import ImportDialog from "./ImportDialog";
 import { locationLink } from "./ScheduleTab";
 import { withData, type TabProps } from "./types";
 import { ConfirmButton, DaysPicker, Field, Modal, NumberInput, uid } from "./ui";
@@ -12,6 +13,9 @@ export default function CourtsTab({ doc, change, result }: TabProps) {
     const { data } = doc;
     const [editingLoc, setEditingLoc] = useState<Location | null>(null);
     const [editingSlot, setEditingSlot] = useState<Slot | null>(null);
+    const [importing, setImporting] = useState(false);
+    const [imported, setImported] = useState<string | null>(null);
+    const [showAvail, setShowAvail] = useState<string | null>(null);
 
     // Quick-add form for weekly slots.
     const [qDays, setQDays] = useState<DayOfWeek[]>([6]);
@@ -127,7 +131,7 @@ export default function CourtsTab({ doc, change, result }: TabProps) {
                 {slots.length > 0 && (
                     <>
                         <p className="text-sm text-muted tabular">
-                            {weeklySpots} match spots a week · {seasonSpots} across the season (after blackout dates) · {needed} matches needed.
+                            {weeklySpots} match spots a week · {seasonSpots} across the season (after blackouts and facility uploads) · {needed} matches needed.
                             {seasonSpots > 0 && needed > seasonSpots && <strong className="text-danger"> Not enough court time for every match.</strong>}
                         </p>
                         <div className="card overflow-x-auto">
@@ -164,11 +168,90 @@ export default function CourtsTab({ doc, change, result }: TabProps) {
                 )}
             </section>
 
+            <section className="grid gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                        <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Facility availability</h2>
+                        <p className="max-w-3xl text-sm text-muted">
+                            Upload the spreadsheet a facility sends with its dates, times and courts. For every date it covers, it replaces that location’s weekly slots;
+                            other dates keep the weekly pattern. A time marked closed or 0 courts blocks it.
+                        </p>
+                    </div>
+                    <button className="btn-primary" onClick={() => setImporting(true)}>
+                        Upload a facility sheet
+                    </button>
+                </div>
+                {imported && <p className="text-sm font-semibold text-ok">{imported}</p>}
+                {data.availability.length === 0 && <div className="card p-5 text-sm text-muted">No facility sheets uploaded. The weekly time slots above are used for every date.</div>}
+                {data.locations
+                    .map((l) => ({ l, rows: data.availability.filter((a) => a.locationId === l.id) }))
+                    .filter((x) => x.rows.length > 0)
+                    .map(({ l, rows }) => {
+                        const byDate = new Map<string, typeof rows>();
+                        for (const a of [...rows].sort((x, y) => x.date.localeCompare(y.date) || x.time.localeCompare(y.time))) {
+                            if (!byDate.has(a.date)) byDate.set(a.date, []);
+                            byDate.get(a.date)!.push(a);
+                        }
+                        const ds = [...byDate.keys()];
+                        const courts = rows.reduce((n, a) => n + a.courts, 0);
+                        const open = showAvail === l.id;
+                        return (
+                            <div key={l.id} className="card p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                        <div className="font-semibold">{l.name}</div>
+                                        <div className="text-sm text-muted tabular">
+                                            {rows.length} time slots on {ds.length} dates, {formatDate(ds[0])} to {formatDate(ds[ds.length - 1])} · {courts} court-slots in total
+                                        </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button className="btn-secondary btn-sm" onClick={() => setShowAvail(open ? null : l.id)}>
+                                            {open ? "Hide dates" : "Show dates"}
+                                        </button>
+                                        <ConfirmButton
+                                            className="btn-danger btn-sm"
+                                            label="Remove upload"
+                                            confirmLabel="Remove and go back to weekly slots?"
+                                            onConfirm={() => change((d) => withData(d, { availability: d.data.availability.filter((a) => a.locationId !== l.id) }))}
+                                        />
+                                    </div>
+                                </div>
+                                {open && (
+                                    <div className="mt-3 grid max-h-80 gap-1.5 overflow-y-auto text-sm">
+                                        {ds.map((date) => (
+                                            <div key={date} className="flex flex-wrap items-center gap-1.5">
+                                                <span className="w-28 shrink-0 font-semibold">{formatDate(date)}</span>
+                                                {byDate.get(date)!.map((a) => (
+                                                    <span key={a.id} className={`chip tabular ${a.courts ? "bg-surface-2" : "bg-danger-soft text-danger"}`}>
+                                                        {formatTime(a.time)} · {a.courts ? `${a.courts} courts` : "closed"}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })}
+            </section>
+
+            {importing && (
+                <ImportDialog
+                    league={data}
+                    onClose={() => setImporting(false)}
+                    onImport={(patch, summary) => {
+                        change((d) => withData(d, patch));
+                        setImporting(false);
+                        setImported(summary);
+                    }}
+                />
+            )}
             {editingLoc && (
                 <LocationDialog
                     key={editingLoc.id || "new"}
                     loc={editingLoc}
-                    slotCount={data.slots.filter((s) => s.locationId === editingLoc.id).length}
+                    slotCount={data.slots.filter((s) => s.locationId === editingLoc.id).length + data.availability.filter((a) => a.locationId === editingLoc.id).length}
+                    matchCount={doc.schedule.matches.filter((m) => m.date && m.locationId === editingLoc.id).length}
                     onClose={() => setEditingLoc(null)}
                     onSave={(l) => {
                         change((d) => {
@@ -179,7 +262,29 @@ export default function CourtsTab({ doc, change, result }: TabProps) {
                     }}
                     onDelete={() => {
                         const id = editingLoc.id;
-                        change((d) => withData(d, { locations: d.data.locations.filter((x) => x.id !== id), slots: d.data.slots.filter((s) => s.locationId !== id) }));
+                        const strip = <T extends { rules: Rule[] }>(x: T): T => ({
+                            ...x,
+                            rules: x.rules.map((r) => ("locationIds" in r ? { ...r, locationIds: r.locationIds.filter((l) => l !== id) } : r)),
+                        });
+                        change((d) => ({
+                            ...d,
+                            data: {
+                                ...d.data,
+                                locations: d.data.locations.filter((x) => x.id !== id),
+                                slots: d.data.slots.filter((s) => s.locationId !== id),
+                                availability: d.data.availability.filter((a) => a.locationId !== id),
+                                teams: d.data.teams.map(strip),
+                                brackets: d.data.brackets.map(strip),
+                            },
+                            // Matches booked there go back to "not placed" (with a
+                            // reason) instead of pointing at a facility that's gone.
+                            schedule: {
+                                ...d.schedule,
+                                matches: d.schedule.matches.map((m) =>
+                                    m.locationId === id ? { ...m, date: null, time: null, locationId: null, slotId: null, locked: false, note: "Its location was deleted." } : m
+                                ),
+                            },
+                        }));
                         setEditingLoc(null);
                     }}
                 />
@@ -219,7 +324,7 @@ function BracketToggles({ brackets, value, onChange }: { brackets: { id: string;
     );
 }
 
-function LocationDialog({ loc, slotCount, onClose, onSave, onDelete }: { loc: Location; slotCount: number; onClose: () => void; onSave: (l: Location) => void; onDelete: () => void }) {
+function LocationDialog({ loc, slotCount, matchCount, onClose, onSave, onDelete }: { loc: Location; slotCount: number; matchCount: number; onClose: () => void; onSave: (l: Location) => void; onDelete: () => void }) {
     const [l, setL] = useState<Location>(loc);
     const pinOk = !l.mapUrl.trim() || safeMapUrl(l.mapUrl) !== "";
     return (
@@ -249,7 +354,11 @@ function LocationDialog({ loc, slotCount, onClose, onSave, onDelete }: { loc: Lo
                     <textarea id="loc-notes" className="input" rows={2} value={l.notes} onChange={(e) => setL({ ...l, notes: e.target.value })} placeholder="Parking, which courts, gate code…" />
                 </Field>
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-                    {loc.id ? <ConfirmButton label="Delete location" confirmLabel={slotCount ? `Delete it and its ${slotCount} time slots?` : "Really delete?"} onConfirm={onDelete} /> : <span />}
+                    {loc.id ? <ConfirmButton label="Delete location" confirmLabel={
+                                slotCount || matchCount
+                                    ? `Delete it${slotCount ? `, its ${slotCount} time slots` : ""}${matchCount ? ` and unschedule ${matchCount} matches` : ""}?`
+                                    : "Really delete?"
+                            } onConfirm={onDelete} /> : <span />}
                     <div className="flex gap-2">
                         <button className="btn-ghost" onClick={onClose}>
                             Cancel

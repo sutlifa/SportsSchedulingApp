@@ -52,6 +52,7 @@ assert(dowOf(isoToDay("2027-03-14")) === 0, "2027-03-14 (DST start) is a Sunday"
 assert(weekendKey(isoToDay("2027-03-07")) === isoToDay("2027-03-06"), "Sunday belongs to the previous Saturday's weekend");
 assert(weekendKey(isoToDay("2027-03-08")) === null, "Monday is not a weekend");
 assert(JSON.stringify(parseTimes("9, 10:30, 1pm, 17:45, 6")) === JSON.stringify(["09:00", "10:30", "13:00", "17:45", "18:00"]), "parseTimes");
+assert(JSON.stringify(parseTimes("9.30, 0930, 1330, 10:15am")) === JSON.stringify(["09:30", "13:30", "10:15"]), "parseTimes: dot, military, am");
 assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" && formatTime("12:00") === "12:00 PM", "formatTime");
 
 // --- the example league schedules completely -------------------------------
@@ -265,6 +266,36 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
         checkInvariants(league, r.matches, `fuzz #${trial}`);
         for (const m of r.matches.filter((x) => !x.date)) assert(m.note, `fuzz #${trial}: unplaced match without a reason`);
     }
+}
+
+// --- regressions from the first Tester pass ------------------------------------
+{
+    // Club limit counts OVERLAPPING matches, not just identical start times.
+    const t = (id: string, club: string, pool: string): Team => ({ id, name: id, bracketId: "b", pool, club, captain: "", contact: "", matches: 1, rules: [], notes: "" });
+    const league: League = {
+        settings: { seasonStart: "2027-03-06", seasonEnd: "2027-03-06", blackouts: [], maxPerDay: 1, matchMinutes: 90, clubLimit: 1, clubLimitMode: "must", courtsPerMatch: 1 },
+        brackets: [{ id: "b", name: "B", matches: 1, earliest: "", latest: "", days: [], color: "#000", rules: [] }],
+        locations: [{ id: "l", name: "L", address: "", mapUrl: "", notes: "" }],
+        slots: ["09:00", "09:30", "10:00", "11:00"].map((time, i) => ({ id: `s${i}`, day: 6 as DayOfWeek, time, locationId: "l", capacity: 4, bracketIds: [] })),
+        availability: [],
+        teams: [t("r1", "Riverside", "1"), t("x1", "", "1"), t("r2", "Riverside", "2"), t("x2", "", "2"), t("r3", "Riverside", "3"), t("x3", "", "3")],
+    };
+    const r = generate(league, [], { scope: "all", seed: 1, maxAttempts: 30, timeBudgetMs: 1e9, now: () => 0 });
+    checkInvariants(league, r.matches, "club overlap");
+    const starts = r.matches.filter((m) => m.date).map((m) => toMinutes(m.time!)).sort((a, b) => a - b);
+    for (let i = 1; i < starts.length; i++) assert(starts[i] - starts[i - 1] >= 90, `club limit 1: Riverside matches overlap (${starts.join(",")})`);
+    assert(r.matches.filter((m) => !m.date).length === 1, "club overlap: only 2 non-overlapping starts exist (9:00/9:30/10:00 overlap; 11:00 is clear of 9:00 and 9:30 only), so one match waits");
+
+    // An only_locations rule whose location was deleted is no restriction (it used to block every slot).
+    const sl = sampleLeague();
+    sl.teams[0].rules = [{ id: "z", mode: "must", type: "only_locations", locationIds: ["deleted-location"] }];
+    const rs = fixedRun(sl);
+    assert(rs.matches.filter((m) => m.home === "t10a" || m.away === "t10a").every((m) => m.date), "stale only_locations doesn't strand the team");
+
+    // A match left at a deleted location is a must-level problem, not a preference miss.
+    const placed = rs.matches.find((m) => m.date)!;
+    const gone = rs.matches.map((m) => (m.id === placed.id ? { ...m, locationId: "deleted-location", slotId: "nope" } : m));
+    assert(audit(sl, gone).issues.get(placed.id)?.hard.includes("Its location was deleted"), "deleted location is a hard issue");
 }
 
 // --- performance: a big league stays interactive ----------------------------------

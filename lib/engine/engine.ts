@@ -118,7 +118,7 @@ export function makeLookup(league: League): NameLookup {
     return { team: (id) => t.get(id), location: (id) => l.get(id) };
 }
 
-function compileStatic(rule: Rule): ((inst: Instance) => boolean) | null {
+function compileStatic(rule: Rule, liveLocations: Set<string>): ((inst: Instance) => boolean) | null {
     switch (rule.type) {
         case "no_days": {
             const s = new Set<number>(rule.days);
@@ -143,7 +143,11 @@ function compileStatic(rule: Rule): ((inst: Instance) => boolean) | null {
             return (i) => i.minutes >= t;
         }
         case "only_locations": {
-            const s = new Set(rule.locationIds);
+            // Ids of deleted locations are dropped, so an "only at X" whose X
+            // was deleted reads -- and behaves -- as no restriction, matching
+            // describeRule ("No locations chosen yet") instead of silently
+            // blocking every slot.
+            const s = new Set(rule.locationIds.filter((id) => liveLocations.has(id)));
             return (i) => s.size === 0 || s.has(i.locationId);
         }
         case "avoid_locations": {
@@ -236,6 +240,7 @@ export function prepare(league: League): Ctx {
     }
     const instByKey = new Map(instances.map((i) => [instanceKey(i.date, i.slotId), i]));
 
+    const liveLocations = new Set(league.locations.map((l) => l.id));
     const teams = new Map<string, TeamCtx>();
     for (const team of league.teams) {
         const bracket = brackets.get(team.bracketId);
@@ -248,7 +253,7 @@ export function prepare(league: League): Ctx {
         const dynamicRules: TeamCtx["dynamicRules"] = [];
         for (const rule of rules) {
             const text = `${team.name}: ${describeRule(rule, lookup)}`;
-            const test = compileStatic(rule);
+            const test = compileStatic(rule, liveLocations);
             if (test) staticRules.push({ rule, text, test });
             else if (
                 rule.type === "max_per_weekend" ||
@@ -331,8 +336,13 @@ export type Spot = { idx: number; day: number; minutes: number; locationId: stri
 type State = {
     used: number[];
     games: Map<string, Game[]>;
-    /** `${day}|${minutes}|${club}` -> matches involving that club at that start. */
-    clubAt: Map<string, number>;
+    /**
+     * `${day}|${club}` -> start minutes of that club's matches that day (one
+     * entry per match). Checked by OVERLAP (within matchMinutes), like the
+     * team and not_same_time checks: staggered 9:00 / 9:30 / 10:00 starts are
+     * all on court at once and must count against the club limit together.
+     */
+    clubAt: Map<string, number[]>;
     /** `${day}|${minutes}|${bracketId}` -> matches of that bracket at that start. */
     bracketAt: Map<string, number>;
     dayLoad: Map<number, number>;
@@ -369,7 +379,17 @@ function place(ctx: Ctx, st: State, home: string, away: string, spot: Spot, by: 
             if (i >= 0) g.splice(i, 1);
         }
     }
-    for (const c of clubsOf(ctx, home, away)) bump(st.clubAt, `${spot.day}|${spot.minutes}|${c}`, by);
+    for (const c of clubsOf(ctx, home, away)) {
+        const k = `${spot.day}|${c}`;
+        const list = st.clubAt.get(k) ?? [];
+        if (by === 1) list.push(spot.minutes);
+        else {
+            const i = list.indexOf(spot.minutes);
+            if (i >= 0) list.splice(i, 1);
+        }
+        if (list.length) st.clubAt.set(k, list);
+        else st.clubAt.delete(k);
+    }
     const b = ctx.teams.get(home)?.bracket.id;
     if (b) bump(st.bracketAt, `${spot.day}|${spot.minutes}|${b}`, by);
     bump(st.dayLoad, spot.day, by);
@@ -478,9 +498,9 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
 
     if (ctx.clubLimit !== null) {
         for (const c of clubsOf(ctx, home, away)) {
-            if ((st.clubAt.get(`${spot.day}|${spot.minutes}|${c}`) ?? 0) + 1 <= ctx.clubLimit) continue;
+            if (clubOverlap(ctx, st, spot.day, spot.minutes, c) + 1 <= ctx.clubLimit) continue;
             const name = ctx.teams.get(home)?.club.trim().toLowerCase() === c ? ctx.teams.get(home)!.team.club : ctx.teams.get(away)!.team.club;
-            const text = `More than ${ctx.clubLimit} ${name} ${ctx.clubLimit === 1 ? "match" : "matches"} at the same time`;
+            const text = `More than ${ctx.clubLimit} ${name} ${ctx.clubLimit === 1 ? "match" : "matches"} on court at the same time`;
             if (ctx.clubMode === "prefer") soft.push(text);
             else {
                 hard.push(text);
@@ -498,6 +518,15 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
  * "prefer" rule (60) outweighs any amount of bunching, which outweighs
  * slot crowding, which outweighs random tie-breaking.
  */
+/** Matches of this club already on court at an overlapping time that day. */
+function clubOverlap(ctx: Ctx, st: State, day: number, minutes: number, club: string): number {
+    const list = st.clubAt.get(`${day}|${club}`);
+    if (!list) return 0;
+    let n = 0;
+    for (const m of list) if (Math.abs(m - minutes) < ctx.matchMinutes) n++;
+    return n;
+}
+
 function score(ctx: Ctx, st: State, home: string, away: string, inst: Instance, softCount: number, rand: number): number {
     let s = softCount * 60;
     for (const id of [home, away]) {
@@ -511,7 +540,7 @@ function score(ctx: Ctx, st: State, home: string, away: string, inst: Instance, 
     }
     s += (st.used[inst.idx] / inst.capacity) * 6;
     s += (st.bracketAt.get(`${inst.day}|${inst.minutes}|${ctx.teams.get(home)!.bracket.id}`) ?? 0) * 3;
-    for (const c of clubsOf(ctx, home, away)) s += (st.clubAt.get(`${inst.day}|${inst.minutes}|${c}`) ?? 0) * 8;
+    for (const c of clubsOf(ctx, home, away)) s += clubOverlap(ctx, st, inst.day, inst.minutes, c) * 8;
     s += (st.dayLoad.get(inst.day) ?? 0) * 0.15;
     return s + rand * 4;
 }
@@ -879,7 +908,10 @@ export function audit(league: League, matches: Match[]): Audit {
         place(ctx, st, m.home, m.away, spot, -1);
         const cap = spot.idx >= 0 ? ctx.instances[spot.idx].capacity : Infinity;
         const v = check(ctx, st, m.home, m.away, spot, cap, false);
-        if (spot.idx < 0) v.soft.unshift("This time is no longer in the weekly slots or the facility’s availability");
+        if (spot.idx < 0) {
+            if (!ctx.league.locations.some((l) => l.id === m.locationId)) v.hard.unshift("Its location was deleted");
+            else v.soft.unshift("This time is no longer in the weekly slots or the facility’s availability");
+        }
         place(ctx, st, m.home, m.away, spot, 1);
         if (v.hard.length || v.soft.length) issues.set(m.id, v);
     }

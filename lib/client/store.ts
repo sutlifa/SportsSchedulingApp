@@ -189,3 +189,61 @@ export function storeFor(mode: Mode): LeagueStore {
 export async function browserLeagues(): Promise<LeagueRecord[]> {
     return Object.values(readLocal());
 }
+
+// ---------------------------------------------------------------------------
+// Local mirror of cloud leagues.
+//
+// Every change to a cloud league is also written here, so that if the
+// database is unreachable (an outage, or the Neon plan's usage running out)
+// nothing typed is lost: the home page lists these copies with "Download
+// backup", and a backup file opens in any copy of the app -- including one
+// run locally with `npm run dev` and no setup at all (browser mode).
+//
+// A mirror is a convenience copy, never the source of truth: it is never
+// uploaded automatically, so it can't overwrite newer cloud work.
+// ---------------------------------------------------------------------------
+
+const MIRROR_KEY = "courtside.mirror.v1";
+const MIRROR_MAX = 15;
+
+export type Mirror = { id: string; name: string; data: League; schedule: Schedule; savedAt: string };
+
+function readMirrorMap(): Record<string, Mirror> {
+    try {
+        const raw = window.localStorage.getItem(MIRROR_KEY);
+        return raw ? (JSON.parse(raw) as Record<string, Mirror>) : {};
+    } catch {
+        return {};
+    }
+}
+
+export function writeMirror(m: Omit<Mirror, "savedAt">): void {
+    try {
+        const all = readMirrorMap();
+        all[m.id] = { ...m, savedAt: new Date().toISOString() };
+        // Keep the most recently edited leagues; localStorage is ~5MB.
+        const keep = Object.values(all)
+            .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+            .slice(0, MIRROR_MAX);
+        window.localStorage.setItem(MIRROR_KEY, JSON.stringify(Object.fromEntries(keep.map((x) => [x.id, x]))));
+    } catch {
+        // Storage full or blocked: the cloud copy is still the real one.
+    }
+}
+
+export function readMirrors(): Mirror[] {
+    return Object.values(readMirrorMap())
+        .filter((m) => m && typeof m.id === "string")
+        .map((m) => ({ ...m, name: typeof m.name === "string" ? m.name : "Untitled league", data: sanitizeLeague(m.data), schedule: sanitizeSchedule(m.schedule) }))
+        .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+}
+
+export function removeMirror(id: string): void {
+    try {
+        const all = readMirrorMap();
+        delete all[id];
+        window.localStorage.setItem(MIRROR_KEY, JSON.stringify(all));
+    } catch {
+        // ignore
+    }
+}

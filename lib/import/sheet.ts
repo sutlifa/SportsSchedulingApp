@@ -266,7 +266,10 @@ const KEYWORDS: Record<"date" | "time" | "courts" | "location", RegExp> = {
 const nonEmpty = (row: Cell[] | undefined) => (row ?? []).filter((c) => !isBlank(c));
 
 /** For header detection only: text-ish cells that read as a time (not bare numbers, which are usually court counts). */
-const looksLikeTime = (c: Cell, ctx: Ctx) => (typeof c === "string" || typeof c === "object") && c !== null && !readDate(c, ctx) && readTime(c) !== null;
+// In a CSV every cell is text, so a bare "4" must not read as 4pm here: a
+// heading that is a time says so with a colon, am/pm or "noon".
+const looksLikeTime = (c: Cell, ctx: Ctx) =>
+    c !== null && ((typeof c === "string" && /:|\d\s*[ap]\.?m?\b|noon/i.test(c)) || typeof c === "object") && !readDate(c, ctx) && readTime(c) !== null;
 const looksLikeDate = (c: Cell, ctx: Ctx) => readDate(c, ctx) !== null;
 
 export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
@@ -277,7 +280,7 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     for (let r = 0; r < scan; r++) {
         const row = grid[r];
         const filled = row.map((c, i) => [c, i] as const).filter(([c]) => !isBlank(c));
-        if (filled.length < 3) continue;
+        if (filled.length < 3 || new Set(filled.map(([c]) => cellText(c))).size < 2) continue;
         const rest = filled.slice(1);
         const times = rest.filter(([c]) => looksLikeTime(c, ctx)).length;
         const dates = rest.filter(([c]) => looksLikeDate(c, ctx)).length;
@@ -286,17 +289,28 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
         if (dates / rest.length >= 0.6 && dates >= 2) return { ...base, layout: "times-down", header: r, label };
     }
 
-    // Rows layout. Header = first row of mostly non-numeric text with data under it.
+    // Rows layout. The header is the first row that names at least two of
+    // our columns (Date, Time, Courts...); failing that, the first row of
+    // mostly non-numeric text. Rows whose cells are all the same value are a
+    // merged title ("Riverside Tennis Center - Spring 2027") and never count.
+    const distinct = (row: Cell[]) => new Set(nonEmpty(row).map(cellText)).size;
+    const keywordHits = (row: Cell[]) =>
+        Object.values(KEYWORDS).filter((kw) => row.some((c) => typeof c === "string" && kw.test(c))).length;
     let header = -1;
     for (let r = 0; r < scan; r++) {
-        const f = nonEmpty(grid[r]);
-        if (f.length < 2) continue;
-        const texty = f.filter((c) => typeof c === "string" && !looksLikeDate(c, ctx) && readTime(c) === null && !/^\d+$/.test(c)).length;
-        if (texty / f.length >= 0.5) {
+        if (distinct(grid[r]) >= 2 && keywordHits(grid[r]) >= 2) {
             header = r;
             break;
         }
-        break; // first substantial row is data, so there is no header
+    }
+    if (header < 0) {
+        for (let r = 0; r < scan; r++) {
+            const f = nonEmpty(grid[r]);
+            if (distinct(grid[r]) < 2) continue;
+            const texty = f.filter((c) => typeof c === "string" && !looksLikeDate(c, ctx) && readTime(c) === null && !/^\d+$/.test(c)).length;
+            if (texty / f.length >= 0.5) header = r;
+            break; // the first substantial row is either the header or data
+        }
     }
     const width = Math.max(0, ...grid.slice(0, scan + 50).map((r) => r.length));
     const data = grid.slice(header + 1, header + 1 + 80).filter((r) => nonEmpty(r).length >= 2);

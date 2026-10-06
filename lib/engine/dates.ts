@@ -105,14 +105,24 @@ export function rangesToDays(ranges: DateRange[]): Set<number> {
  */
 export function parseTimes(text: string): string[] {
     const out: string[] = [];
-    const re = /(\d{1,2})(?::(\d{2}))?\s*(am|pm|a|p)?/gi;
+    // "9", "9:30", "9.30", "0930" / "1330" (military), each with optional am/pm.
+    const re = /(\d{1,4})(?:[:.](\d{2}))?\s*(am|pm|a|p)?(?![\d])/gi;
     for (const m of text.matchAll(re)) {
-        let h = Number(m[1]);
-        const min = m[2] ? Number(m[2]) : 0;
+        let h: number;
+        let min: number;
+        if (m[1].length >= 3 && !m[2]) {
+            h = Math.floor(Number(m[1]) / 100);
+            min = Number(m[1]) % 100;
+        } else {
+            if (m[1].length > 2) continue;
+            h = Number(m[1]);
+            min = m[2] ? Number(m[2]) : 0;
+        }
         const ap = m[3]?.toLowerCase();
+        const military = m[1].length >= 3;
         if (ap?.startsWith("p") && h < 12) h += 12;
         if (ap?.startsWith("a") && h === 12) h = 0;
-        if (!ap && h >= 1 && h < 7) h += 12;
+        if (!ap && !military && h >= 1 && h < 7) h += 12;
         if (h > 23 || min > 59) continue;
         const t = `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
         if (!out.includes(t)) out.push(t);

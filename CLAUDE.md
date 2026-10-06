@@ -37,6 +37,12 @@ lib/engine/       PURE, shared by client, API and scripts. Imports use .ts exten
                   audit() re-checks a saved schedule; moveOptions() for hand moves
   sanitize.ts     coerce untrusted JSON (API bodies, backups) into a League/Schedule
   sample.ts       the "example league" AND the main verify fixture
+lib/import/       facility availability sheets → dated court availability (pure)
+  xlsx.ts         dependency-free .xlsx reader (zip via DecompressionStream; merged
+                  cells filled; date-formatted numbers returned as {serial})
+  sheet.ts        CSV/paste parsing, lenient date/time/courts readers, guessMapping()
+                  (rows | dates-down | times-down) — the UI shows the guess and lets the
+                  person correct it, because every facility's format differs
 lib/db.ts         postgres client, `prepare: false` REQUIRED (Neon pooled). DATABASE_URL||POSTGRES_URL
 lib/db/schema.ts  the whole DDL as a string; lib/db/ensure.ts runs it once per cold start
 lib/leagues.ts    every leagues query; user_id + deleted_at filtered IN the SQL
@@ -44,6 +50,15 @@ lib/client/store.ts  cloud (API) and browser (localStorage) stores behind one in
 components/workspace/  the league editor (tabs)
 scripts/verify-engine.ts  headless invariants — run it, don't eyeball
 ```
+
+**Facility uploads (`League.availability`) REPLACE the weekly slots for every (location,
+date) they mention**, including 0-court rows (= closed); other dates keep the weekly
+pattern; blackouts still win. Courts → matches at once via `settings.courtsPerMatch`.
+An import only replaces the (location, date) pairs in that file, so monthly sheets stack.
+
+**Cloud leagues are mirrored to localStorage on every change** (`writeMirror`), listed on
+the home page with Download backup / Restore. Never auto-upload a mirror: it could
+overwrite newer cloud work.
 
 **State is `{ name, data: League, schedule: Schedule }` and nothing else.** Who's short a
 match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don't store them.
@@ -71,7 +86,8 @@ match, which rule a match breaks, court usage — all DERIVED by `audit()`. Don'
 
 ```bash
 npm run lint && npm run typecheck && npm run build   # build must pass with NO env vars
-npm run verify                                       # engine invariants (~5s), incl. fuzz
+npm run verify                                       # engine + import invariants (~6s), incl. fuzz
+npm run verify:db                                    # needs a LOCAL throwaway DATABASE_URL
 npm run db:migrate                                   # optional; app self-migrates
 ```
 

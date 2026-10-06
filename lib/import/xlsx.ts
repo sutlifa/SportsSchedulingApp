@@ -220,7 +220,11 @@ function readSheet(xml: string, shared: string[], dateStyles: Set<number>): Cell
         rows[rowNo] = row;
     }
     // Dense rectangle, holes as null.
-    const width = Math.min(MAX_COLS, Math.max(0, ...rows.map((r) => (r ? r.length : 0))));
+    // `rows` is sparse (blank spreadsheet rows are never written), and .map
+    // skips holes, so measure with a plain loop rather than Math.max(...map).
+    let width = 0;
+    for (let r = 0; r < rows.length; r++) width = Math.max(width, rows[r]?.length ?? 0);
+    width = Math.min(MAX_COLS, width);
     const grid: Cell[][] = [];
     for (let r = 0; r < rows.length; r++) {
         const src = rows[r] ?? [];

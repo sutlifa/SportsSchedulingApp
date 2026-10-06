@@ -133,7 +133,13 @@ export default function BracketsTab({ doc, change, lookup, goTo }: TabProps) {
                         setEditing(null);
                     }}
                     onDelete={() => {
-                        change((d) => withData(d, { brackets: d.data.brackets.filter((x) => x.id !== editing.id), slots: d.data.slots.map((s) => ({ ...s, bracketIds: s.bracketIds.filter((x) => x !== editing.id) })) }));
+                        // A slot reserved only for this bracket is deleted with it. Just
+                        // dropping the id would leave bracketIds empty, which means
+                        // "open to every bracket" -- the opposite of what it was.
+                        const gone = editing.id;
+                        const only = (ids: string[]) => ids.length === 1 && ids[0] === gone;
+                        const drop = <T extends { bracketIds: string[] }>(list: T[]) => list.filter((x) => !only(x.bracketIds)).map((x) => ({ ...x, bracketIds: x.bracketIds.filter((b) => b !== gone) }));
+                        change((d) => withData(d, { brackets: d.data.brackets.filter((x) => x.id !== gone), slots: drop(d.data.slots), availability: drop(d.data.availability) }));
                         setEditing(null);
                     }}
                 />
@@ -146,6 +152,7 @@ function BracketDialog({ bracket, props, onClose, onSave, onDelete }: { bracket:
     const { data } = props.doc;
     const [b, setB] = useState<Bracket>(bracket);
     const teamCount = data.teams.filter((t) => t.bracketId === bracket.id).length;
+    const reserved = [...data.slots, ...data.availability].filter((x) => x.bracketIds.length === 1 && x.bracketIds[0] === bracket.id).length;
     return (
         <Modal title={bracket.id ? `Edit ${bracket.name}` : "New bracket"} onClose={onClose} wide>
             <div className="grid gap-4">
@@ -182,7 +189,11 @@ function BracketDialog({ bracket, props, onClose, onSave, onDelete }: { bracket:
                         teamCount ? (
                             <span className="text-sm text-muted">Move or delete its {teamCount} teams to delete this bracket.</span>
                         ) : (
-                            <ConfirmButton label="Delete bracket" confirmLabel="Really delete?" onConfirm={onDelete} />
+                            <ConfirmButton
+                                label="Delete bracket"
+                                confirmLabel={reserved ? `Delete it and the ${reserved} time slots only it could use?` : "Really delete?"}
+                                onConfirm={onDelete}
+                            />
                         )
                     ) : (
                         <span />
