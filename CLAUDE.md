@@ -37,6 +37,8 @@ lib/engine/       PURE, shared by client, API and scripts. Imports use .ts exten
                   audit() re-checks a saved schedule; moveOptions() for hand moves
   sanitize.ts     coerce untrusted JSON (API bodies, backups) into a League/Schedule
   sample.ts       the "example league" AND the main verify fixture
+  advice.ts       problem message → plain fix + the tab to make it on (matches engine
+                  wording exactly; verify-engine asserts every engine message has advice)
 lib/import/       facility availability sheets → dated court availability (pure)
   xlsx.ts         dependency-free .xlsx reader (zip via DecompressionStream; merged
                   cells filled; date-formatted numbers returned as {serial})
@@ -48,8 +50,6 @@ lib/db/schema.ts  the whole DDL as a string; lib/db/ensure.ts runs it once per c
 lib/leagues.ts    every leagues query; user_id + deleted_at filtered IN the SQL
 lib/client/store.ts  cloud (API) and browser (localStorage) stores behind one interface
 components/workspace/  the league editor (tabs)
-  advice.ts       problem message → plain fix + the tab to make it on (matches engine
-                  wording exactly; verify-engine asserts every engine message has advice)
 app/guide/        user guide + tutorial; scripts/e2e/tutorial.mjs drives it word for word
 scripts/verify-engine.ts  headless invariants — run it, don't eyeball
 ```

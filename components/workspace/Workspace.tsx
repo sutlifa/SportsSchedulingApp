@@ -127,6 +127,26 @@ function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode;
         return () => clearTimeout(t);
     }, [doc, saveTick, doSave]);
 
+    // After a failed save, coming back to this tab retries at once rather than
+    // waiting out the 5s timer. The usual reason is being signed out: the fix
+    // (signing in again) happens in another tab, and the moment they return
+    // here is exactly when it has become possible. Errors that didn't ask for
+    // a retry (a 413, a deleted league) are retried too, harmlessly: the
+    // person may have trimmed the league, and a repeat failure just restates
+    // the same message. A conflict is a different status kind and stays put.
+    useEffect(() => {
+        if (status.kind !== "error") return;
+        const retry = () => {
+            if (document.visibilityState === "visible" && dirty.current) setSaveTick((t) => t + 1);
+        };
+        document.addEventListener("visibilitychange", retry);
+        window.addEventListener("focus", retry);
+        return () => {
+            document.removeEventListener("visibilitychange", retry);
+            window.removeEventListener("focus", retry);
+        };
+    }, [status.kind]);
+
     // Leaving the league inside the app (the "Leagues" link, the logo) unmounts
     // the editor without a beforeunload, and the debounce timer's cleanup
     // would drop the last <700ms of edits. Save them on the way out instead.

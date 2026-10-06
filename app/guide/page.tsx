@@ -349,7 +349,7 @@ export default function GuidePage() {
                             <a className="text-accent underline" href="/tutorial/riverside-april-2027.csv" download>
                                 the CSV version
                             </a>
-                            ). It has a title row, dates down the side, start times across the top, and cells such as “Tournament”, “Reserved” and “-”.
+                            ). Both have dates down the side, start times across the top, and cells such as “Tournament”, “Reserved” and “-”; the .xlsx also has a title row above the headings.
                         </p>
                         <ol>
                             <li>
@@ -357,7 +357,7 @@ export default function GuidePage() {
                             </li>
                             <li>
                                 Check the guess: <B>Layout</B> should be <em>Grid: dates down the side, times across the top</em> and <B>Heading row</B>{" "}
-                                <em>Row 3</em>. If a facility’s sheet is read wrongly, change these and the result updates straight away.
+                                <em>Row 3</em> for the .xlsx (it has a title row) or <em>Row 1</em> for the CSV. If a facility’s sheet is read wrongly, change these and the result updates straight away.
                             </li>
                             <li>
                                 Set <B>Location</B> to <strong>Riverside Tennis Center</strong>.
@@ -462,7 +462,8 @@ export default function GuidePage() {
                     <Step n={10} id="t-adjust" title="Adjust by hand">
                         <ol>
                             <li>
-                                Choose <strong>By date</strong>, find any match and press <B>Move</B>.
+                                Choose <strong>By date</strong>, find a <strong>12U</strong> or <strong>14U</strong> match and press <B>Move</B>. (Not a
+                                10U one: step 11 reschedules 10U, and a locked 10U match would stay put and change the numbers you’re told to expect there.)
                             </li>
                             <li>
                                 The list shows every open time that fits <em>every</em> rule (amber lines miss a preference). Pick one and press{" "}

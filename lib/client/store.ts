@@ -44,12 +44,15 @@ async function errorText(res: Response): Promise<string> {
     }
     // The server sends a readable `error`; these cover responses that didn't
     // come from our code (a proxy, a timeout, Vercel itself).
-    if (res.status === 401) return "You’ve been signed out. Sign in again in another tab; your changes stay on this page.";
+    if (res.status === 401) return SIGNED_OUT;
     if (res.status === 413) return "This league is too large to save.";
     if (res.status === 404) return "This league wasn’t found. It may have been deleted.";
     if (res.status === 502 || res.status === 503 || res.status === 504) return `The server is busy or restarting (error ${res.status}). We’ll keep trying.`;
     return `Something went wrong (error ${res.status}). Try again in a moment.`;
 }
+
+/** Quoted word for word in /guide's "Saving" table; keep the two identical. */
+const SIGNED_OUT = "You’ve been signed out. Sign in again in another tab; your changes stay on this page.";
 
 export const cloudStore: LeagueStore = {
     async list() {
@@ -91,7 +94,20 @@ export const cloudStore: LeagueStore = {
             const j = (await res.json()) as { error: string; current: LeagueRecord };
             return { ok: false, kind: "conflict", current: j.current, message: j.error };
         }
-        return { ok: false, kind: "error", message: await errorText(res), retry: res.status >= 500 };
+        if (res.status === 401) {
+            // Our own text, not the server's: the guide quotes this sentence
+            // word for word, and a session can lapse in ways whose response
+            // body we don't write (Auth.js, a proxy). It retries because the
+            // fix happens elsewhere: once the person signs in again in another
+            // tab, the cookie is shared and the next attempt (on the 5s timer,
+            // or at once when this tab regains focus) just works. Not retrying
+            // left the page saying "not saved" forever after they'd fixed it.
+            return { ok: false, kind: "error", message: SIGNED_OUT, retry: true };
+        }
+        // 429 and 5xx are the server's problem and pass on their own; any
+        // other 4xx is something about this request, and resending the same
+        // body would only fail the same way.
+        return { ok: false, kind: "error", message: await errorText(res), retry: res.status === 429 || res.status >= 500 };
     },
     async remove(id) {
         const res = await fetch(`/api/leagues/${encodeURIComponent(id)}`, { method: "DELETE" });

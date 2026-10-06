@@ -27,7 +27,7 @@ export default async function Home() {
     } catch (err) {
         const ref = errorRef();
         console.error(`HOME LIST LEAGUES ERROR [ref ${ref}]:`, err);
-        loadError = `Couldn’t reach the database just now, so your leagues can’t be listed. Reload in a minute. If it keeps happening, the database may be paused or over its usage limit; your backup copies below still work. (Reference ${ref})`;
+        loadError = `Couldn’t reach the database just now, so your leagues can’t be listed. Reload in a minute. If it keeps happening, the database may be paused or over its usage limit. (Reference ${ref})`;
     }
     return <LeagueList mode="cloud" initial={leagues} loadError={loadError} userKey={String(userId)} />;
 }

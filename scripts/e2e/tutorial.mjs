@@ -207,7 +207,15 @@ try {
     // --- 10 ------------------------------------------------------------------
     STEP("10 move and lock");
     await page.getByRole("button", { name: "By date" }).click();
-    await page.getByRole("button", { name: "Move", exact: true }).first().click();
+    // A 12U or 14U match, as the guide says: step 11 regenerates 10U only and
+    // expects "Couldn't place (10)". A locked 10U match would be kept by that
+    // regenerate and turn the 10 into 9 (or break the 8 AM rule instead).
+    const movable = page
+        .locator("li")
+        .filter({ has: page.locator(".chip", { hasText: /^\s*1[24]U\s*$/ }) })
+        .first();
+    ok(/1[24]U/.test(await movable.innerText()), "step 10 picks a 12U/14U match");
+    await movable.getByRole("button", { name: "Move", exact: true }).click();
     await dialog().locator("button[aria-pressed]").first().click();
     await dialog().getByRole("button", { name: "Move here and lock" }).click();
     await see("Locked", { exact: true });

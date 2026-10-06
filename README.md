@@ -116,7 +116,7 @@ expected result). Playwright is intentionally not a dependency; install it anywh
 
 ```bash
 npm run build && npx next start -p 3004 &
-(cd /tmp/pw && npm i playwright)
+(mkdir -p /tmp/pw && cd /tmp/pw && npm i playwright)
 PLAYWRIGHT_MODULE=/tmp/pw/node_modules/playwright/index.mjs \
   node --experimental-strip-types --no-warnings scripts/e2e/tutorial.mjs
 ```

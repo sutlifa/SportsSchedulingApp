@@ -213,6 +213,12 @@ export default function LeagueList({ mode, initial, loadError, userKey = "" }: {
                     </fieldset>
                     {start === "file" && <input id="backup-file" type="file" accept="application/json,.json" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-sm" />}
                     {error && <p className="rounded-lg bg-danger-soft p-2.5 text-sm text-danger">{error}</p>}
+                    {/* Said here, not in the server's loadError: only this
+                        browser knows whether it holds any backup copies, and
+                        promising ones that don't exist sent people looking. */}
+                    {loadError && mirrors.length > 0 && (
+                        <p className="text-sm text-muted">Backup copies of your leagues are saved in this browser and still work: see “Backup copies in this browser”.</p>
+                    )}
                     <button className="btn-primary" disabled={busy}>
                         {busy ? "Creating…" : "Create league"}
                     </button>

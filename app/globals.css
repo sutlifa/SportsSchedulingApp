@@ -167,6 +167,15 @@ h3 {
     text-transform: uppercase;
     color: var(--color-muted);
 }
+/* `label` is display:block so a form label sits on its own line above its
+   field. The same look is used for table headings (<th className="label">),
+   and a block <th> stops being a table cell: every heading stacked into the
+   first column. Unlayered on purpose: Tailwind v4 puts utilities in a cascade
+   layer, and unlayered CSS beats any layer, so this wins without !important
+   and without touching `label` anywhere else. */
+th.label {
+    display: table-cell;
+}
 @utility chip {
     display: inline-flex;
     align-items: center;
