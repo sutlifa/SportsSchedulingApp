@@ -244,12 +244,14 @@ export function readTime(c: Cell): string | null {
 }
 
 /**
- * A cell that SAYS a court is unavailable: the closed word must be the whole
- * cell, optionally followed by a note after a separator ("Reserved - USTA",
- * "Tournament (juniors)"). Anchoring matters: "Clinic Court" is a court's
- * name and "3 (1 held for lessons)" is three courts -- neither is closed.
+ * A cell that SAYS a court is unavailable: it STARTS with a closed word,
+ * whatever follows ("Tournament - courts 1-6", "Clinic 9-11am",
+ * "Reserved (2)" -- ambiguous, so it errs toward not booking). The one
+ * exception is a court's own name: "Clinic Court", "Event Court 2" and
+ * "Private Court 1" are courts, not closures. Note "3 (1 held for lessons)"
+ * doesn't start with a closed word, so its leading number wins.
  */
-const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b\s*(?:[-–—:(/,].*)?$/i;
+const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b(?!\s*courts?\b)/i;
 
 /** Courts available. null = blank (no slot); 0 = explicitly closed. undefined = unreadable. */
 export function readCourts(c: Cell): number | null | undefined {
@@ -261,9 +263,11 @@ export function readCourts(c: Cell): number | null | undefined {
     // Facilities write "reserved", "tournament" etc. where a court is NOT
     // available. These must read as closed, never as an open court.
     if (/^(-|–|—|x|closed|none|n\/?a|no|full|booked|0)$/.test(s)) return 0;
-    // No digits at all: either a "closed" word or unreadable. With digits, the
-    // number wins over any note riding along with it.
-    if (!/\d/.test(s)) return CLOSED_CELL.test(s) ? 0 : undefined;
+    // Starts with a closed word: closed, even with numbers after it.
+    if (CLOSED_CELL.test(s)) return 0;
+    // Otherwise a number wins over any note riding along with it; no number
+    // at all is unreadable.
+    if (!/\d/.test(s)) return undefined;
     const items = s.split(/\s*(?:,|;|&|\band\b)\s*/).filter((x) => /\d/.test(x));
     if (items.length >= 2) return items.length;
     const range = /(\d+)\s*(?:-|–|to)\s*(\d+)/.exec(s);
