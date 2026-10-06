@@ -5,6 +5,7 @@ import { DAY_LONG, formatDate, formatTime, parseTimes, toMinutes } from "@/lib/e
 import { mapSearchUrl, safeMapUrl } from "@/lib/engine/sanitize";
 import { cap, countOf, type Terms } from "@/lib/engine/sports";
 import type { DayOfWeek, League, Location, Rule, Slot, Unit } from "@/lib/engine/types";
+import DayPlanner, { FacilityPills, SpotTotals } from "./DayPlanner";
 import ImportDialog from "./ImportDialog";
 import { locationLink } from "./ScheduleTab";
 import { withData, type Doc, type TabProps } from "./types";
@@ -57,13 +58,22 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
     // Quick-add form for weekly slots.
     const [qDays, setQDays] = useState<DayOfWeek[]>([6]);
     const [qTimes, setQTimes] = useState("9:00, 11:00, 1pm, 3pm");
+    // One facility choice for the planner's board AND the quick-add form, so
+    // whatever the form adds lands on the board in view.
     const [qLoc, setQLoc] = useState("");
+    // "By day" (the planner) or "List" (every slot in one table). Not
+    // remembered across visits on purpose: reading it back from storage
+    // needs a post-mount effect that flips the view a moment after it
+    // renders, which is worse than always opening on the planner.
+    const [view, setView] = useState<"day" | "list">("day");
     const [qCap, setQCap] = useState<number | null>(2);
     // null = every unit at the facility; a list = just those.
     const [qUnits, setQUnits] = useState<string[] | null>(null);
     const [qBrackets, setQBrackets] = useState<string[]>([]);
     const times = parseTimes(qTimes);
-    const locId = qLoc || data.locations[0]?.id || "";
+    // Falls back to the first facility when the chosen one was deleted, so
+    // the board and the form never point at a facility that's gone.
+    const locId = data.locations.some((l) => l.id === qLoc) ? qLoc : data.locations[0]?.id || "";
     const qLocation = data.locations.find((l) => l.id === locId);
     const qUnitIds = qLocation?.units.length ? (qUnits ?? qLocation.units.map((u) => u.id)).filter((id) => qLocation.units.some((u) => u.id === id)) : [];
     const cpm = Math.max(1, data.settings.courtsPerMatch || 1);
@@ -78,9 +88,112 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
 
     const order = (d: DayOfWeek) => (d + 6) % 7; // Monday first
     const slots = [...data.slots].sort((a, b) => order(a.day) - order(b.day) || toMinutes(a.time) - toMinutes(b.time));
-    const weeklySpots = data.slots.reduce((s, x) => s + slotCapacity(x, data), 0);
-    const seasonSpots = result.ctx.instances.reduce((s, i) => s + i.capacity, 0);
     const needed = Math.round(data.teams.reduce((s, team) => s + (team.matches ?? data.brackets.find((b) => b.id === team.bracketId)?.matches ?? 0), 0) / 2);
+
+    const pickLocation = (id: string) => {
+        setQLoc(id);
+        setQUnits(null);
+    };
+
+    // Render functions, not components: a component defined in here would be
+    // a new type every render and remount (losing focus) on each keystroke.
+    const renderQuickAdd = () => (
+        <div className="card grid gap-3 p-4">
+            <h3 className="font-semibold">Add the same times to many days</h3>
+            <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
+                <Field label="Days">
+                    <DaysPicker value={qDays} onChange={setQDays} />
+                </Field>
+                <Field
+                    label="Start times"
+                    htmlFor="q-times"
+                    hint={times.length ? `Reads as: ${times.map(formatTime).join(", ")}` : "e.g. 9, 10:30, 1pm, 17:45"}
+                >
+                    <input id="q-times" className="input" value={qTimes} onChange={(e) => setQTimes(e.target.value)} />
+                </Field>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+                <Field label="Facility" htmlFor="q-loc">
+                    <select
+                        id="q-loc"
+                        className="input"
+                        value={locId}
+                        onChange={(e) => pickLocation(e.target.value)}
+                    >
+                        {data.locations.map((l) => (
+                            <option key={l.id} value={l.id}>
+                                {l.name}
+                            </option>
+                        ))}
+                    </select>
+                </Field>
+                {qLocation?.units.length ? (
+                    <Field
+                        label={`${Units} free`}
+                        hint={`${qAtOnce} ${qAtOnce === 1 ? t.match : t.matches} at once${cpm > 1 ? ` (${cpm} ${t.units} per ${t.match})` : ""}`}
+                    >
+                        <UnitToggles units={qLocation.units} value={qUnitIds} onChange={setQUnits} />
+                    </Field>
+                ) : (
+                    <Field label={`${Matches} at once`} htmlFor="q-cap">
+                        <NumberInput id="q-cap" value={qCap} min={1} max={100} onChange={setQCap} className="input w-24" />
+                    </Field>
+                )}
+                {data.brackets.length > 0 && (
+                    <Field label="Open to" hint="None selected = every bracket.">
+                        <BracketToggles brackets={data.brackets} value={qBrackets} onChange={setQBrackets} />
+                    </Field>
+                )}
+                <button className="btn-primary" onClick={addSlots} disabled={!times.length || !qDays.length || qAtOnce < 1}>
+                    Add {qDays.length * times.length} slot{qDays.length * times.length === 1 ? "" : "s"}
+                </button>
+            </div>
+        </div>
+    );
+
+    const renderList = () => (
+        <div className="card overflow-x-auto">
+            <table className="w-full text-sm">
+                <thead>
+                    <tr className="border-b border-border bg-surface-2 text-left">
+                        <th className="label px-4 py-2">Day</th>
+                        <th className="label px-4 py-2">Start</th>
+                        <th className="label px-4 py-2">Facility</th>
+                        <th className="label px-4 py-2">{Units}</th>
+                        <th className="label px-4 py-2">At once</th>
+                        <th className="label px-4 py-2">Open to</th>
+                        <th className="px-4 py-2" />
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                    {slots.map((s) => (
+                        <tr key={s.id}>
+                            <td className="px-4 py-2">{DAY_LONG[s.day]}</td>
+                            <td className="px-4 py-2 font-mono tabular">{formatTime(s.time)}</td>
+                            <td className="px-4 py-2">
+                                {data.locations.find((l) => l.id === s.locationId)?.name ?? <span className="text-danger">Deleted facility</span>}
+                            </td>
+                            <td className="px-4 py-2">{unitNames(s.unitIds, data) || <span className="text-muted">—</span>}</td>
+                            <td className="px-4 py-2 tabular">{slotCapacity(s, data)}</td>
+                            <td className="px-4 py-2">
+                                {s.bracketIds.length
+                                    ? s.bracketIds
+                                          .map((id) => data.brackets.find((b) => b.id === id)?.name)
+                                          .filter(Boolean)
+                                          .join(", ")
+                                    : "All"}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                                <button className="btn-ghost btn-sm" onClick={() => setEditingSlot(s)}>
+                                    Edit
+                                </button>
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
 
     return (
         <div className="grid gap-8">
@@ -140,128 +253,60 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
 
             {only !== "facilities" && (
                 <>
-                    <section className="grid gap-3">
-                        <div>
-                            <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Weekly {t.time}</h2>
-                            <p className="text-sm text-muted">
-                                A start time that repeats every week, with which {t.units} are free (or how many {t.matches} can be on at once). Restrict a slot to certain brackets
-                                to give age groups different schedules.
-                            </p>
+                    <section className="grid gap-4">
+                        <div className="flex flex-wrap items-end justify-between gap-3">
+                            <div className="min-w-0">
+                                <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Weekly {t.time}</h2>
+                                <p className="max-w-3xl text-sm text-muted">
+                                    A start time that repeats every week, with which {t.units} are free (or how many {t.matches} can be on at once). Plan each facility a
+                                    day at a time on the board, or add one pattern to many days with the form below it. Restrict a slot to certain brackets to give age
+                                    groups different schedules.
+                                </p>
+                            </div>
+                            {data.locations.length > 0 && (
+                                <div className="inline-flex shrink-0 rounded-lg border border-border bg-surface p-0.5" role="group" aria-label="Show weekly time">
+                                    {(
+                                        [
+                                            ["day", "By day"],
+                                            ["list", "List"],
+                                        ] as const
+                                    ).map(([v, label]) => (
+                                        <button
+                                            key={v}
+                                            type="button"
+                                            aria-pressed={view === v}
+                                            onClick={() => setView(v)}
+                                            className={`rounded-md px-3 py-1 text-sm font-semibold ${view === v ? "bg-accent text-accent-fg" : "text-muted hover:text-fg"}`}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
-                        {data.locations.length > 0 ? (
-                            <div className="card grid gap-3 p-4">
-                                <h3 className="font-semibold">Add time slots</h3>
-                                <div className="grid gap-3 lg:grid-cols-[auto_minmax(0,1fr)]">
-                                    <Field label="Days">
-                                        <DaysPicker value={qDays} onChange={setQDays} />
-                                    </Field>
-                                    <Field
-                                        label="Start times"
-                                        htmlFor="q-times"
-                                        hint={times.length ? `Reads as: ${times.map(formatTime).join(", ")}` : "e.g. 9, 10:30, 1pm, 17:45"}
-                                    >
-                                        <input id="q-times" className="input" value={qTimes} onChange={(e) => setQTimes(e.target.value)} />
-                                    </Field>
-                                </div>
-                                <div className="flex flex-wrap items-end gap-3">
-                                    <Field label="Facility" htmlFor="q-loc">
-                                        <select
-                                            id="q-loc"
-                                            className="input"
-                                            value={locId}
-                                            onChange={(e) => {
-                                                setQLoc(e.target.value);
-                                                setQUnits(null);
-                                            }}
-                                        >
-                                            {data.locations.map((l) => (
-                                                <option key={l.id} value={l.id}>
-                                                    {l.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </Field>
-                                    {qLocation?.units.length ? (
-                                        <Field
-                                            label={`${Units} free`}
-                                            hint={`${qAtOnce} ${qAtOnce === 1 ? t.match : t.matches} at once${cpm > 1 ? ` (${cpm} ${t.units} per ${t.match})` : ""}`}
-                                        >
-                                            <UnitToggles units={qLocation.units} value={qUnitIds} onChange={setQUnits} />
-                                        </Field>
-                                    ) : (
-                                        <Field label={`${Matches} at once`} htmlFor="q-cap">
-                                            <NumberInput id="q-cap" value={qCap} min={1} max={100} onChange={setQCap} className="input w-24" />
-                                        </Field>
-                                    )}
-                                    {data.brackets.length > 0 && (
-                                        <Field label="Open to" hint="None selected = every bracket.">
-                                            <BracketToggles brackets={data.brackets} value={qBrackets} onChange={setQBrackets} />
-                                        </Field>
-                                    )}
-                                    <button className="btn-primary" onClick={addSlots} disabled={!times.length || !qDays.length || qAtOnce < 1}>
-                                        Add {qDays.length * times.length} slot{qDays.length * times.length === 1 ? "" : "s"}
-                                    </button>
-                                </div>
-                            </div>
-                        ) : (
+                        {data.locations.length === 0 ? (
                             <p className="text-sm text-muted">Add a facility first.</p>
-                        )}
-
-                        {slots.length > 0 && (
+                        ) : view === "day" ? (
                             <>
-                                <p className="text-sm text-muted tabular">
-                                    {weeklySpots} {t.match} spots a week · {seasonSpots} across the season (after blackouts and facility uploads) · {needed} {t.matches} needed.
-                                    {seasonSpots > 0 && needed > seasonSpots && (
-                                        <strong className="text-danger">
-                                            {" "}
-                                            Not enough {t.time} for every {t.match}.
-                                        </strong>
-                                    )}
-                                </p>
-                                <div className="card overflow-x-auto">
-                                    <table className="w-full text-sm">
-                                        <thead>
-                                            <tr className="border-b border-border bg-surface-2 text-left">
-                                                <th className="label px-4 py-2">Day</th>
-                                                <th className="label px-4 py-2">Start</th>
-                                                <th className="label px-4 py-2">Facility</th>
-                                                <th className="label px-4 py-2">{Units}</th>
-                                                <th className="label px-4 py-2">At once</th>
-                                                <th className="label px-4 py-2">Open to</th>
-                                                <th className="px-4 py-2" />
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-border">
-                                            {slots.map((s) => (
-                                                <tr key={s.id}>
-                                                    <td className="px-4 py-2">{DAY_LONG[s.day]}</td>
-                                                    <td className="px-4 py-2 font-mono tabular">{formatTime(s.time)}</td>
-                                                    <td className="px-4 py-2">
-                                                        {data.locations.find((l) => l.id === s.locationId)?.name ?? <span className="text-danger">Deleted facility</span>}
-                                                    </td>
-                                                    <td className="px-4 py-2">{unitNames(s.unitIds, data) || <span className="text-muted">—</span>}</td>
-                                                    <td className="px-4 py-2 tabular">{slotCapacity(s, data)}</td>
-                                                    <td className="px-4 py-2">
-                                                        {s.bracketIds.length
-                                                            ? s.bracketIds
-                                                                  .map((id) => data.brackets.find((b) => b.id === id)?.name)
-                                                                  .filter(Boolean)
-                                                                  .join(", ")
-                                                            : "All"}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right">
-                                                        <button className="btn-ghost btn-sm" onClick={() => setEditingSlot(s)}>
-                                                            Edit
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <FacilityPills league={data} t={t} locId={locId} onPick={pickLocation} />
+                                <SpotTotals league={data} result={result} t={t} location={qLocation} needed={needed} />
+                                <DayPlanner
+                                    doc={doc}
+                                    change={change}
+                                    t={t}
+                                    locId={locId}
+                                    onEditSlot={setEditingSlot}
+                                    fallbackAtOnce={Math.max(1, qCap ?? 2)}
+                                />
+                            </>
+                        ) : (
+                            <>
+                                <SpotTotals league={data} result={result} t={t} needed={needed} />
+                                {slots.length > 0 ? renderList() : <div className="card p-5 text-sm text-muted">No weekly {t.time} yet.</div>}
                             </>
                         )}
+                        {data.locations.length > 0 && renderQuickAdd()}
                     </section>
 
                     <section className="grid gap-3">

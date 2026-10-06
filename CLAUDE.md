@@ -75,6 +75,11 @@ components/workspace/  the league editor (tabs). SetupWizard.tsx (/league/<id>?s
                   /new sends a "Guided setup" league) reuses the tabs for its steps
                   (CourtsTab `only`, SeasonTab `setup`, TeamsTab `requests`) so the
                   wizard can't drift from the editor. Don't fork tab UI into the wizard.
+  DayPlanner.tsx  the "By day" weekly time board (CourtsTab, also the wizard's time step):
+                  one facility's Mon-Sun, per-day Add times / Copy to… / Clear, spot totals.
+                  It edits League.slots directly -- no planner state -- so it, the List view and
+                  the quick-add form can't disagree. Removing slots leaves booked games where
+                  they are (flagged), the same as Delete slot.
 components/SiteHeader + HeaderNav  every page in the bar (desktop) or the Menu (phones)
 components/guide/ GuideContent (/guide) and TutorialContent (/tutorial) -- separate pages on
                   purpose (the header links to both), sharing parts.tsx (sport picker + its

@@ -252,30 +252,43 @@ function Tutorial({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: 
 
                     <Step n={5} id="t-slots" title={`Add the weekly ${t.time}`}>
                         <p>
-                            On the <B>{Time}</B> step, in <B>Add time slots</B>, add three batches. Choose the days, type the times and pick the facility. All its {t.units}{" "}
-                            start selected under <B>{Units} free</B>. Then press <B>Add … slots</B>:
+                            The <B>{Time}</B> step opens on the <B>By day</B> planner: one facility’s week from Monday to Sunday, with Saturday and Sunday grouped
+                            as the weekend. The pills above it pick the facility, and <strong>{fac1}</strong> is picked to start with. Each day has its own{" "}
+                            <B>Add times</B>:
                         </p>
-                        <ul>
+                        <ol>
                             <li>
-                                <strong>Sat</strong> · times <code className="font-mono">9, 11, 1pm, 3pm</code> · {fac1} · all 3 {t.units} (3 {t.matches} at once) →
-                                4 slots
+                                In the <strong>Saturday</strong> column press <B>Add times</B>, type <code className="font-mono">9, 11, 1pm, 3pm</code>, check the
+                                “Reads as:” line under the box (9:00 AM, 11:00 AM, 1:00 PM, 3:00 PM), and press <B>Add</B>.
                             </li>
                             <li>
-                                <strong>Sun</strong> · times <code className="font-mono">12pm, 2pm</code> · {fac1} · all 3 {t.units} → 2 slots
+                                In <strong>Sunday</strong>: <B>Add times</B> → <code className="font-mono">12pm, 2pm</code> → <B>Add</B>.
                             </li>
                             <li>
-                                <strong>Tue and Thu</strong> · times <code className="font-mono">5pm, 7pm</code> · {fac2} · both {t.units} (2 {t.matches} at once) →
-                                4 slots
+                                Press the <B>{fac2}</B> pill. In <strong>Tuesday</strong>: <B>Add times</B> → <code className="font-mono">5pm, 7pm</code> →{" "}
+                                <B>Add</B>.
                             </li>
-                        </ul>
+                            <li>
+                                Still in Tuesday, press <B>Copy to…</B>, choose <B>Thu</B>, leave <B>Add to their times</B> selected, and press{" "}
+                                <B>Copy to 1 day</B>.
+                            </li>
+                        </ol>
                         <p className="text-sm text-muted">
-                            Check the “Reads as:” line under the times box before adding. It shows how your typing was understood. Leave <B>Open to</B> empty so
-                            every bracket can use these slots; bracket start limits still apply. Un-tick a {t.unit} if it isn’t free at that time.
+                            New times get all of the facility’s {t.units} ({u(0)}, {u(1)}, {u(2)} at {fac1}: 3 {t.matches} at once) and are open to every bracket;
+                            bracket start limits still apply. Press a time to change its {t.units}, its day or <B>Open to</B>.
                         </p>
                         <Expect>
-                            a table of 10 weekly time slots with their {t.units} listed, and the line “26 {t.match} spots a week · … across the season · … {t.matches}{" "}
-                            needed.”
+                            on {fac1}’s board, <strong>Saturday</strong> reads “12 {t.match} spots” (four times, each listing {u(0)}, {u(1)}, {u(2)}) and{" "}
+                            <strong>Sunday</strong> “6 {t.match} spots”. On {fac2}’s, <strong>Tuesday</strong> and <strong>Thursday</strong> read “4 {t.match}{" "}
+                            spots” each. The totals above the board: {fac1} “18 {t.match} spots a week”, all of them at the weekend; {fac2} 8, all on weekdays;
+                            and <strong>All facilities</strong> “26 {t.match} spots a week” (Weekdays 8, Weekend 18), with how many that makes across the season.
                         </Expect>
+                        <Tip>
+                            <B>Copy to…</B> also has quick picks (<B>Weekdays</B>, <B>Weekend</B>, <B>Every day</B>) and can <B>Replace their times</B> instead
+                            of adding. <B>Clear</B> empties a day. <B>List</B> (next to <B>By day</B>) shows every slot in one table, and the{" "}
+                            <B>Add the same times to many days</B> form under the board adds one pattern to several days at once (Tue and Thu, 5pm and 7pm, in
+                            one go).
+                        </Tip>
                     </Step>
 
                     <Step n={6} id="t-facility-sheet" title="Upload a facility spreadsheet">

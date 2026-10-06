@@ -30,7 +30,10 @@ explains how everything works and every error message.
   playing areas (Sheet A, Sheet B). Number them in one click ("Field 1" × 6), and every
   scheduled game is assigned its own unit.
 - **Weekly time slots.** Each slot has a day, a start time, a facility, and which units are free.
-  Slots can be limited to some brackets.
+  Slots can be limited to some brackets. A weekly day planner shows each facility's week as a
+  Mon–Sun board (weekend grouped) with its game spots per day: add times to one day, copy a day to
+  others (add or replace), or clear it, with weekday / weekend / week / season totals per facility
+  and overall. A list view and a "same times on many days" form are still there.
 - **Facility spreadsheets.** Import .xlsx, .csv or pasted cells, in any layout: one row per
   slot, one row per sheet or field, or a grid. These set exact availability for specific dates.
   The importer guesses the layout and shows its guess for you to correct before anything is

@@ -151,27 +151,57 @@ async function walk(sport, t) {
 
         // --- 5 -----------------------------------------------------------------
         STEP("5 weekly time");
-        const setDays = async (want) => {
-            const group = page.getByRole("group").filter({ has: page.getByRole("button", { name: "Mon", exact: true }) }).first();
-            for (const d of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
-                const b = group.getByRole("button", { name: d, exact: true });
-                if (((await b.getAttribute("aria-pressed")) === "true") !== want.includes(d)) await b.click();
-            }
+        // The By day planner: per-day "Add times" on one facility's board.
+        ok((await page.getByRole("button", { name: "By day", exact: true }).getAttribute("aria-pressed")) === "true", "opens on the By day planner");
+        ok((await page.getByRole("button", { name: fac1, exact: true }).getAttribute("aria-pressed")) === "true", `${fac1} is picked first`);
+        const day = (name) => page.locator(`section[aria-label="${name}"]`);
+        const addTimes = async (dayName, times, reads) => {
+            await day(dayName).getByRole("button", { name: "Add times", exact: true }).click();
+            await day(dayName).getByLabel("Start times").fill(times);
+            await day(dayName).getByText(`Reads as: ${reads}`, { exact: true }).waitFor();
+            checks++;
+            await day(dayName).getByRole("button", { name: "Add", exact: true }).click();
         };
-        for (const [days, times, loc, atOnce, n] of [
-            [["Sat"], "9, 11, 1pm, 3pm", fac1, 3, 4],
-            [["Sun"], "12pm, 2pm", fac1, 3, 2],
-            [["Tue", "Thu"], "5pm, 7pm", fac2, 2, 4],
-        ]) {
-            await setDays(days);
-            await page.locator("#q-times").fill(times);
-            await page.locator("#q-loc").selectOption({ label: loc });
-            await see(`${atOnce} ${t.matches} at once`);
-            await page.getByRole("button", { name: `Add ${n} slots` }).click();
-        }
-        ok((await page.locator("table tbody tr").count()) === 10, "10 weekly slots");
-        ok((await page.getByRole("cell", { name: `${u(0)}, ${u(1)}, ${u(2)}`, exact: true }).count()) === 6, "Riverside slots list their 3 units");
-        await see(new RegExp(`^26 ${t.match} spots a week · \\d+ across the season`));
+        const spots = async (dayName, n) => {
+            const text = (await day(dayName).locator("p").first().innerText()).trim();
+            ok(text === `${n} ${t.match} spots`, `${dayName}: ${n} ${t.match} spots (got "${text}")`);
+        };
+        await addTimes("Saturday", "9, 11, 1pm, 3pm", "9:00 AM, 11:00 AM, 1:00 PM, 3:00 PM");
+        await addTimes("Sunday", "12pm, 2pm", "12:00 PM, 2:00 PM");
+        await spots("Saturday", 12);
+        await spots("Sunday", 6);
+        ok((await day("Saturday").getByRole("button", { name: `Saturday 9:00 AM, ${u(0)}, ${u(1)}, ${u(2)}`, exact: true }).count()) === 1, "a slot button names its day, time and units");
+        ok((await day("Saturday").getByText(`${u(0)}, ${u(1)}, ${u(2)}`, { exact: true }).count()) === 4, `Saturday's 4 times list all 3 ${t.units}`);
+        // Adding a time the day already has is skipped, with a note.
+        await day("Sunday").getByRole("button", { name: "Add times", exact: true }).click();
+        await day("Sunday").getByLabel("Start times").fill("2pm");
+        await day("Sunday").getByRole("button", { name: "Add", exact: true }).click();
+        await see("Nothing added: 2:00 PM is already on Sunday, so skipped.");
+        await day("Sunday").getByRole("button", { name: "Cancel", exact: true }).click();
+        await spots("Sunday", 6);
+        await page.getByRole("button", { name: fac2, exact: true }).click();
+        ok((await page.getByRole("button", { name: fac2, exact: true }).getAttribute("aria-pressed")) === "true", `${fac2} picked`);
+        await addTimes("Tuesday", "5pm, 7pm", "5:00 PM, 7:00 PM");
+        await day("Tuesday").getByRole("button", { name: "Copy to…", exact: true }).click();
+        await dialog().getByRole("button", { name: "Thu", exact: true }).click();
+        ok(await dialog().getByLabel("Add to their times").isChecked(), "Add to their times is the default");
+        await dialog().getByRole("button", { name: "Copy to 1 day", exact: true }).click();
+        await spots("Tuesday", 4);
+        await spots("Thursday", 4);
+        ok((await day("Thursday").getByRole("button", { name: `Thursday 7:00 PM, ${u(0)}, ${u(1)}`, exact: true }).count()) === 1, "the copy keeps its units");
+        const totals = async (name) => (await page.getByRole("group", { name: `${name} totals` }).innerText()).replace(/\s+/g, " ");
+        let tot = await totals(fac2);
+        ok(tot.includes(`8 ${t.match} spots a week`) && /Weekdays 8 Weekend 0/.test(tot), `${fac2} totals: ${tot}`);
+        tot = await totals("All facilities");
+        ok(tot.includes(`26 ${t.match} spots a week`) && /Weekdays 8 Weekend 18 Season \d+/.test(tot), `all-facility totals: ${tot}`);
+        await page.getByRole("button", { name: fac1, exact: true }).click();
+        tot = await totals(fac1);
+        ok(tot.includes(`18 ${t.match} spots a week`) && /Weekdays 0 Weekend 18/.test(tot), `${fac1} totals: ${tot}`);
+        // The List view still shows the same 10 slots.
+        await page.getByRole("button", { name: "List", exact: true }).click();
+        ok((await page.locator("table tbody tr").count()) === 10, "10 weekly slots in the List view");
+        ok((await page.getByRole("cell", { name: `${u(0)}, ${u(1)}, ${u(2)}`, exact: true }).count()) === 6, `${short1} slots list their 3 units`);
+        await page.getByRole("button", { name: "By day", exact: true }).click();
 
         // --- 6 -----------------------------------------------------------------
         STEP("6 facility sheet");
@@ -357,6 +387,22 @@ async function walk(sport, t) {
             await fits(title);
             const box = await page.getByRole("navigation", { name: "Setup navigation" }).locator(".btn-primary").boundingBox();
             ok(box && box.x >= 0 && box.x + box.width <= 390 && box.y >= 0 && box.y + box.height <= 800, `${title}: the Next/Finish button is fully on screen`);
+            if (title === Time) {
+                // The day planner stacks its days on a phone; none may poke out sideways.
+                ok((await page.getByRole("button", { name: "By day", exact: true }).getAttribute("aria-pressed")) === "true", "the time step opens on the planner");
+                for (const d of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]) {
+                    const b = await page.locator(`section[aria-label="${d}"]`).boundingBox();
+                    ok(b && b.x >= 0 && b.x + b.width <= 390, `${d} column fits at 390px`);
+                }
+                await page.locator('section[aria-label="Saturday"]').getByRole("button", { name: "Add times", exact: true }).click();
+                await fits("planner with Add times open");
+                await page.locator('section[aria-label="Saturday"]').getByRole("button", { name: "Cancel", exact: true }).click();
+                await page.locator('section[aria-label="Saturday"]').getByRole("button", { name: "Copy to…", exact: true }).click();
+                await dialog().waitFor();
+                await fits("Copy to dialog");
+                await page.keyboard.press("Escape");
+                ok((await dialog().count()) === 0, "Escape closes Copy to");
+            }
             if (title === "Brackets & pools") {
                 await page.getByRole("button", { name: "Add bracket" }).click();
                 await dialog().waitFor();

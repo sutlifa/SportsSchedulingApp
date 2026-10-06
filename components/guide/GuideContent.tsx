@@ -126,7 +126,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             [
                                 ["Season", `The sport, first and last day, blackout dates, and league-wide limits like ${t.matches} per day and ${t.units} per ${t.match}.`],
                                 ["Brackets & pools", `Age groups (10U, 12U…), how many ${t.matches} each team is guaranteed, and start-time limits such as “10U never after 5:30 PM”.`],
-                                [tab, `Your facilities and their ${t.units} (${u(0)}, ${u(1)}…), the weekly ${t.time}, and facility spreadsheets for specific dates.`],
+                                [tab, `Your facilities and their ${t.units} (${u(0)}, ${u(1)}…), the weekly ${t.time} (planned a day at a time on each facility’s Mon–Sun board, with its ${t.match} spots per day, weekdays, weekend and season), and facility spreadsheets for specific dates.`],
                                 ["Teams", `Every team with its bracket, pool and club, plus the ${t.captain}’s requests as rules.`],
                                 ["Schedule", `Generate the season, see problems with their fixes, move and lock ${t.matches}, and export for ${t.captains}.`],
                             ] as const
@@ -147,7 +147,8 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                                 [`Guaranteed ${t.matches}`, `How many ${t.matches} every team gets against its pool (5 by default). Teams don’t have to play every week.`],
                                 ["Facility", `A building or site: ${fac1}. Add the address and a Google Maps pin so families can find it.`],
                                 [Units, `The named playing areas inside a facility: ${u(0)}, ${u(1)}… Each ${t.match} is given one, and schedules say which.`],
-                                [`Weekly ${t.time}`, `A start time that repeats every week at a facility, with which ${t.units} are free: “Saturdays 9:00 AM, ${u(0)}–${u(2)}”.`],
+                                [`Weekly ${t.time}`, `A start time that repeats every week at a facility, with which ${t.units} are free: “Saturdays 9:00 AM, ${u(0)}–${u(2)}”. The By day planner shows one facility’s week as a board: add times to a day, copy a day to others, or clear it.`],
+                                [`${cap(t.match)} spots`, `How many ${t.matches} a time can hold at once, added up per day, per week or across the season. The season count skips blackouts and uses facility spreadsheets where they apply.`],
                                 ["Facility sheet", `A spreadsheet from a facility listing exact dates, times and ${t.units}. For the dates it covers, it replaces the weekly ${t.time}.`],
                                 ["Must / Prefer", `A Must rule is never broken by the scheduler. A Prefer rule is avoided, but broken if that’s the only way to fit a ${t.match}.`],
                                 ["Lock", `A locked ${t.match} stays put when you regenerate. Moving a ${t.match} by hand locks it.`],
