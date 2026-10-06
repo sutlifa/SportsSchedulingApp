@@ -11,7 +11,8 @@ import { generate } from "../lib/engine/engine.ts";
 import { sampleLeague } from "../lib/engine/sample.ts";
 import { emptyLeague } from "../lib/engine/sanitize.ts";
 import { SPORT_IDS } from "../lib/engine/sports.ts";
-import type { League } from "../lib/engine/types.ts";
+import type { League, Rule } from "../lib/engine/types.ts";
+import { dayToIso, isoToDay } from "../lib/engine/dates.ts";
 
 let checks = 0;
 function assert(cond: unknown, msg: string): asserts cond {
@@ -274,6 +275,69 @@ const unplaced = (l: League) => {
         `engine names the real cause (${r.warnings.join(" | ")})`,
     );
     assert(!r.warnings.some((x) => /odd total/.test(x)), "…not an odd total");
+}
+
+// Weekend/week caps counted against the guarantee (a Tester find: these are
+// dynamic rules, so the static date count alone let them through as "Ready").
+{
+    const base = clone(ex);
+    base.settings.maxPerDay = 2;
+    const end = isoToDay(base.settings.seasonStart) + 27;
+    base.settings.seasonEnd = dayToIso(end);
+    const b14 = base.brackets.find((b) => b.name === "14U")!;
+    const team = base.teams.find((t) => t.bracketId === b14.id)!;
+    const satOnly: Rule = { id: "rs", type: "only_days", mode: "must", days: [6] };
+    for (const [rule, label] of [
+        [{ id: "rw", type: "max_per_weekend", mode: "must", n: 1 } as Rule, "per weekend"],
+        [{ id: "rt", type: "max_weekend_total", mode: "must", n: 3 } as Rule, "weekend total"],
+        [{ id: "rk", type: "max_per_week", mode: "must", n: 1 } as Rule, "per week"],
+    ] as const) {
+        const l = clone(base);
+        const tm = l.teams.find((t) => t.id === team.id)!;
+        tm.rules = [satOnly, rule];
+        const hit = blocks(l, "x", "requests").find((c) => c.text.startsWith(`${tm.name}: “`) && /leaves room for only \d+ games in the season, but it needs 5\./.test(c.text));
+        assert(hit, `${label} cap blocks on requests (${blocks(l, "x").map((c) => c.text).join(" | ")})`);
+        const r = generate(l, [], { scope: "all", seed: 1, maxAttempts: 5, timeBudgetMs: 1e9, now: () => 0 });
+        const got = r.matches.filter((m) => m.date && (m.home === tm.id || m.away === tm.id)).length;
+        assert(got < 5, `${label}: Generate really is short for the team (${got})`);
+        const soft = clone(l);
+        soft.teams.find((t) => t.id === team.id)!.rules = [satOnly, { ...rule, mode: "prefer" } as Rule];
+        const own = blocks(soft, "x", "requests").filter((c) => c.text.startsWith(`${tm.name}:`));
+        assert(!own.length, `${label} as prefer never blocks (${own.map((c) => c.text).join(" | ")})`);
+    }
+}
+
+// Soundness fuzz: a "leaves room for only" block is a proof, so the team it
+// names must really come up short when generated. A false block traps an
+// organiser at Next with nothing to fix.
+{
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+    const types = ["max_per_weekend", "max_weekend_total", "max_per_week", "min_days_between"] as const;
+    let proofs = 0;
+    for (let k = 0; k < 60; k++) {
+        const l = sampleLeague((["soccer", "hockey", "tennis"] as const)[k % 3]);
+        l.settings.maxPerDay = 1 + Math.floor(rnd() * 2);
+        for (const team of l.teams) {
+            if (rnd() < 0.7) continue;
+            const type = types[Math.floor(rnd() * types.length)];
+            const n = type === "min_days_between" ? 7 + Math.floor(rnd() * 14) : type === "max_weekend_total" ? Math.floor(rnd() * 5) : 1;
+            team.rules = [...team.rules, { id: `f${k}${team.id}`, type, mode: "must", n } as Rule];
+            if (rnd() < 0.3) team.rules.push({ id: `d${k}${team.id}`, type: "only_days", mode: "must", days: [6, 0] });
+        }
+        const named = readiness(l, "x").filter((c) => c.level === "block" && /leaves room for only/.test(c.text));
+        if (!named.length) continue;
+        const r = generate(l, [], { scope: "all", seed: 1, maxAttempts: 3, timeBudgetMs: 1e9, now: () => 0 });
+        for (const c of named) {
+            const team = l.teams.find((t) => c.text.startsWith(`${t.name}:`));
+            if (!team) continue;
+            const want = Number(/needs (\d+)\.$/.exec(c.text)![1]);
+            const got = r.matches.filter((m) => m.date && (m.home === team.id || m.away === team.id)).length;
+            assert(got < want, `fuzz ${k}: “${c.text}” but Generate gave ${team.name} ${got}`);
+            proofs++;
+        }
+    }
+    assert(proofs > 5, `fuzz exercised the proofs (${proofs})`);
 }
 
 console.log(`verify-readiness: ${checks} checks passed`);

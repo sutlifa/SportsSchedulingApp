@@ -9,7 +9,7 @@ import ScheduleTab from "./ScheduleTab";
 import SeasonTab from "./SeasonTab";
 import TeamsTab from "./TeamsTab";
 import type { Tab, TabProps } from "./types";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Field } from "./ui";
 
 /** Where a tab's "Go there" link lands while the wizard is open. */
@@ -50,6 +50,14 @@ export default function SetupWizard({
     const blocked = here.some((c) => c.level === "block");
     const blocksAnywhere = checks.filter((c) => c.level === "block");
     const heading = useRef<HTMLHeadingElement>(null);
+    const stepList = useRef<HTMLOListElement>(null);
+    // On a phone the step list scrolls sideways and shows ~3 steps, so the
+    // current one can be out of sight ("where am I?"). Keep it in view: on
+    // every step change, including the first render (Setup guide can open
+    // on step 7). Only the list scrolls; "nearest" never moves the page.
+    useEffect(() => {
+        stepList.current?.querySelector(`[data-step="${step}"]`)?.scrollIntoView({ inline: "nearest", block: "nearest" });
+    }, [step]);
     const go = (s: StepId) => {
         setStep(s);
         window.scrollTo({ top: 0 });
@@ -93,7 +101,7 @@ export default function SetupWizard({
                 {/* relative: each step's sr-only status is position:absolute, and an
                     absolute box escapes a scroller that isn't its containing block --
                     the last steps' labels sat ~850px out and widened the page. */}
-                <ol className="relative mt-3 flex gap-1 overflow-x-auto pb-1">
+                <ol ref={stepList} className="relative mt-3 flex gap-1 overflow-x-auto pb-1">
                     {SETUP_STEPS.map((s, i) => {
                         // Ticked only when this step AND every one before it is
                         // clear: "Requests ✓" next to an empty league read as done.
@@ -102,6 +110,7 @@ export default function SetupWizard({
                         return (
                             <li key={s} className="shrink-0">
                                 <button
+                                    data-step={s}
                                     onClick={() => go(s)}
                                     aria-current={current ? "step" : undefined}
                                     className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm font-semibold ${current ? "border-accent bg-accent-soft text-fg" : "border-border text-muted hover:text-fg"}`}

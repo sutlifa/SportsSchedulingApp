@@ -358,6 +358,15 @@ async function walk(sport, t) {
                 ok((await dialog().count()) === 0, "Escape closes the dialog");
             }
         }
+        // Walking with Next (not by tapping chips, which Playwright scrolls to),
+        // the current step's chip must stay in the step list's visible part.
+        await stepper("Name & sport");
+        for (const title of ["Season", "Brackets & pools", "Facilities", Time, "Teams", "Requests", "Review & schedule"]) {
+            await goNext(title);
+            const list = await page.getByLabel("Setup steps").locator("ol").boundingBox();
+            const chip = await page.getByLabel("Setup steps").locator('[aria-current="step"]').boundingBox();
+            ok(list && chip && chip.x >= list.x - 1 && chip.x + chip.width <= list.x + list.width + 1, `${title}: current step chip is in view on a phone`);
+        }
         await page.setViewportSize({ width: 1280, height: 900 });
         await page.getByRole("button", { name: "Exit setup" }).click();
 

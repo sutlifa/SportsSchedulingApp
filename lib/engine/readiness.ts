@@ -21,7 +21,7 @@
  * Pure. Wording follows the league's sport.
  */
 import { bracketHard, compileStatic, prepare, teamTarget, poolKey, type Instance } from "./engine.ts";
-import { formatRange, isIsoDate, isoToDay, rangesToDays } from "./dates.ts";
+import { formatRange, isIsoDate, isoToDay, isWeekend, rangesToDays, weekendKey, weekKey } from "./dates.ts";
 import { describeRule, type NameLookup } from "./rules.ts";
 import { cap, termsFor } from "./sports.ts";
 import type { League, Rule } from "./types.ts";
@@ -158,7 +158,43 @@ export function readiness(league: League, name: string): Check[] {
         }
         return count;
     };
-    const gaps = (rules: Rule[]) => rules.filter((r): r is Extract<Rule, { type: "min_days_between" }> => r.mode === "must" && r.type === "min_days_between" && r.n > 0);
+    /**
+     * The most games these days can hold under ONE must-rule that limits how
+     * often a team plays -- days apart, per weekend, weekend total, per week
+     * -- each day still holding at most maxPerDay. Each is an exact count for
+     * its rule alone, so a result below the target is a proof the team will
+     * come up short, never a guess. The tightest rule is reported. Rules are
+     * taken one at a time on purpose: their combination is the scheduler's
+     * job, and a bound that mixed them could only be looser, not wrong.
+     */
+    const tightest = (rules: Rule[], days: number[]): { rule: Rule; fit: number } | null => {
+        const perDay = s.maxPerDay;
+        let best: { rule: Rule; fit: number } | null = null;
+        for (const r of rules) {
+            if (r.mode !== "must") continue;
+            let fit: number;
+            if (r.type === "min_days_between" && r.n > 0) fit = fitApart(days, r.n);
+            else if (r.type === "max_per_weekend") {
+                const weekends = new Map<number, number>();
+                let weekdays = 0;
+                for (const d of days) {
+                    const k = weekendKey(d);
+                    if (k === null) weekdays++;
+                    else weekends.set(k, (weekends.get(k) ?? 0) + 1);
+                }
+                fit = weekdays * perDay + [...weekends.values()].reduce((n, c) => n + Math.min(r.n, c * perDay), 0);
+            } else if (r.type === "max_weekend_total") {
+                const weekend = days.filter(isWeekend).length;
+                fit = (days.length - weekend) * perDay + Math.min(r.n, weekend * perDay);
+            } else if (r.type === "max_per_week") {
+                const weeks = new Map<number, number>();
+                for (const d of days) weeks.set(weekKey(d), (weeks.get(weekKey(d)) ?? 0) + 1);
+                fit = [...weeks.values()].reduce((n, c) => n + Math.min(r.n, c * perDay), 0);
+            } else continue;
+            if (!best || fit < best.fit) best = { rule: r, fit };
+        }
+        return best;
+    };
     const ruleLookup: NameLookup = { team: (id) => league.teams.find((x) => x.id === id)?.name, location: (id) => league.locations.find((x) => x.id === id)?.name, terms: t };
     const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
     /** Brackets whose own must-rules already explain a shortfall, so their teams don't repeat it. */
@@ -189,13 +225,12 @@ export function readiness(league: League, name: string): Check[] {
             } else if (most > 0) {
                 const tests = mustTests(b.rules);
                 const days = datesOf(usable.filter((i) => tests.every((ok) => ok(i))));
-                const gap = gaps(b.rules).sort((x, y) => y.n - x.n)[0];
-                const fit = gap ? fitApart(days, gap.n) : 0;
+                const limit = tightest(b.rules, days);
                 if (most > days.length * s.maxPerDay) {
                     add("brackets", "block", `${b.name}: its must-rules leave ${plural(days.length, "date", "dates")} its teams can play, but a team needs ${most} ${t.matches}.`);
                     bracketShort.add(b.id);
-                } else if (gap && fit < most) {
-                    add("brackets", "block", `${b.name}: “${describeRule(gap, ruleLookup)}” leaves room for only ${fit} ${t.matches} in the season, but a team needs ${most}.`);
+                } else if (limit && limit.fit < most) {
+                    add("brackets", "block", `${b.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${limit.fit} ${t.matches} in the season, but a team needs ${most}.`);
                     bracketShort.add(b.id);
                 }
             }
@@ -260,12 +295,11 @@ export function readiness(league: League, name: string): Check[] {
             add("requests", "block", `${team.name}: its must-requests leave ${plural(days.length, "date", "dates")} it can play, but it needs ${tc.target} ${t.matches}.`);
             continue;
         }
-        const gap = gaps([...tc.bracket.rules, ...team.rules]).sort((a, b) => b.n - a.n)[0];
-        if (gap) {
-            const fit = fitApart(days, gap.n);
-            if (fit < tc.target)
-                add("requests", "block", `${team.name}: “${describeRule(gap, ruleLookup)}” leaves room for only ${fit} ${t.matches} in the season, but it needs ${tc.target}.`);
-        }
+        // Days-apart and per-weekend/week caps, the bracket's and the team's
+        // own, measured on the days this team can actually play.
+        const limit = tightest([...tc.bracket.rules, ...team.rules], days);
+        if (limit && limit.fit < tc.target)
+            add("requests", "block", `${team.name}: “${describeRule(limit.rule, ruleLookup)}” leaves room for only ${limit.fit} ${t.matches} in the season, but it needs ${tc.target}.`);
     }
     if (league.teams.length) add("requests", "info", `${withRules} of ${league.teams.length} teams have requests. Add any you’ve been sent; you can always add more later.`);
 
