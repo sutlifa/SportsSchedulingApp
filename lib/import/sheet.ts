@@ -243,6 +243,8 @@ export function readTime(c: Cell): string | null {
     return hm(to24(start), start.min);
 }
 
+const CLOSED_WORDS = /\b(reserved|unavailable|not available|tournament|blocked|maintenance|private|lesson|lessons|camp|clinic|event|hold|held|rain|closed)\b/i;
+
 /** Courts available. null = blank (no slot); 0 = explicitly closed. undefined = unreadable. */
 export function readCourts(c: Cell): number | null | undefined {
     if (isBlank(c)) return null;
@@ -250,7 +252,9 @@ export function readCourts(c: Cell): number | null | undefined {
     if (typeof c === "object") return Number.isInteger(c.serial) && c.serial >= 0 && c.serial < 200 ? c.serial : undefined;
     if (typeof c === "number") return c >= 0 && c < 200 ? Math.floor(c) : undefined;
     const s = c.toLowerCase().trim();
-    if (/^(-|–|—|x|closed|none|n\/?a|no|full|booked|0)$/.test(s)) return 0;
+    // Facilities write "reserved", "tournament" etc. where a court is NOT
+    // available. These must read as closed, never as an open court.
+    if (/^(-|–|—|x|closed|none|n\/?a|no|full|booked|0)$/.test(s) || CLOSED_WORDS.test(s)) return 0;
     const items = s.split(/\s*(?:,|;|&|\band\b)\s*/).filter((x) => /\d/.test(x));
     if (items.length >= 2) return items.length;
     const range = /(\d+)\s*(?:-|–|to)\s*(\d+)/.exec(s);
@@ -267,7 +271,7 @@ const KEYWORDS: Record<"date" | "time" | "courts" | "location", RegExp> = {
     date: /\bdate\b|^day$|^dates?$/i,
     time: /time|start|slot|hour/i,
     courts: /court|avail|^#|qty|count|number|^cts?\b/i,
-    location: /locat|facility|site|venue|club|park|center|centre/i,
+    location: /locat|facility|site|venue|club|park|center|centre|^where$/i,
 };
 
 const nonEmpty = (row: Cell[] | undefined) => (row ?? []).filter((c) => !isBlank(c));
@@ -349,44 +353,38 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     const courts = pick(KEYWORDS.courts, (c) => readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx)), 0.6);
     let location: number | null = null;
     for (let c = 0; c < width; c++) if (!taken.has(c) && KEYWORDS.location.test(headText(c))) location = c;
-    return { ...base, header, date, time, courts, location, courtsMode: guessCourtsMode(grid, header, date, time, courts, location, ctx) };
+    return { ...base, header, date, time, courts, location, courtsMode: guessCourtsMode(grid, header, courts) };
 }
 
 /** "Court 7", "Ct. 3", "#4": a reference to ONE court, not a count. */
 const SINGLE_COURT = /^(court|ct)\.?\s*#?\s*\d+[a-z]?$|^#\s*\d+$/i;
 
 /**
- * Count vs names. Names when most courts cells name a single court or are
- * words that aren't counts ("Stadium"), or when the same date+time repeats
- * on many rows -- a sheet with one row per court, where "7" is court seven,
- * not seven courts.
+ * Count vs names -- deliberately conservative, because guessing "names" on a
+ * counts sheet silently changes the numbers (two times sharing a slot, or a
+ * pasted duplicate, would collapse). Names only when:
+ *  - most filled courts cells are court LABELS ("Court 7", "Ct 3", "#4",
+ *    "Stadium") -- words that mean closed ("Reserved") don't count as labels;
+ *  - or the column is headed like a single court ("Court", "Court #",
+ *    "Court No.") rather than a quantity ("Courts", "Courts available").
+ * Everything else stays a count. The dialog says when names was picked.
  */
-function guessCourtsMode(grid: Cell[][], header: number, date: number | null, time: number | null, courts: number | null, location: number | null, ctx: Ctx): "count" | "names" {
-    if (date === null) return "count";
-    const keys = new Map<string, number>();
-    let lastDate: string | null = null;
+function guessCourtsMode(grid: Cell[][], header: number, courts: number | null): "count" | "names" {
+    if (courts === null) return "count";
+    const head = header >= 0 ? cellText(grid[header][courts] ?? null).trim() : "";
+    if (/^(court|ct)\.?\s*(#|no\.?|number|name)?$/i.test(head)) return "names";
     let named = 0;
     let filled = 0;
     for (const row of grid.slice(header + 1, header + 201)) {
-        if (nonEmpty(row).length === 0) continue;
-        const d: string | null = readDate(row[date], ctx)?.date ?? (isBlank(row[date]) ? lastDate : null);
-        if (!d) continue;
-        lastDate = d;
-        const t = time !== null ? readTime(row[time]) : readDate(row[date], ctx)?.time;
-        if (!t) continue;
-        const k = `${d}|${t}|${location !== null ? cellText(row[location]).toLowerCase() : ""}`;
-        keys.set(k, (keys.get(k) ?? 0) + 1);
-        if (courts !== null && !isBlank(row[courts])) {
-            filled++;
-            const c = row[courts];
-            if (typeof c === "string" && (SINGLE_COURT.test(c.trim()) || readCourts(c) === undefined)) named++;
-        }
+        const c = row[courts];
+        if (isBlank(c)) continue;
+        filled++;
+        if (typeof c !== "string") continue;
+        const t = c.trim();
+        if (SINGLE_COURT.test(t)) named++;
+        else if (readCourts(t) === undefined && /[a-z]/i.test(t) && t.length <= 30) named++; // "Stadium", "Center Court"
     }
-    const rows = [...keys.values()].reduce((a, b) => a + b, 0);
-    const repeated = [...keys.values()].filter((n) => n > 1).reduce((a, b) => a + b, 0);
-    if (filled && named / filled >= 0.5) return "names";
-    if (rows >= 4 && repeated / rows >= 0.3) return "names";
-    return "count";
+    return filled > 0 && named / filled >= 0.5 ? "names" : "count";
 }
 
 /** The column under a grid header that holds the row labels: the first filled one, nudged to where the data actually is. */

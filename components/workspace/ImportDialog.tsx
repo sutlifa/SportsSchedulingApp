@@ -250,6 +250,12 @@ export default function ImportDialog({
                                         </select>
                                     </Field>
                                 )}
+                                {mapping.layout === "rows" && mapping.courtsMode === "names" && (
+                                    <p className="rounded-md bg-warn-soft p-2 text-sm text-warn sm:col-span-2">
+                                        Reading each row as one court: rows at the same date and time are added up as separate courts. If the courts column is a number of
+                                        courts, change “Each row is” above.
+                                    </p>
+                                )}
                                 {mapping.layout === "rows" && mapping.courts === null && mapping.courtsMode === "count" && (
                                     <Field label="Courts for every slot" htmlFor="imp-default-courts" hint="The sheet has no courts column.">
                                         <NumberInput id="imp-default-courts" value={defaultCourts} min={1} max={200} onChange={setDefaultCourts} />

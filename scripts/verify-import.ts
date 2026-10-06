@@ -201,6 +201,18 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     const nm = guessMapping(n, ctx);
     eq(nm.courtsMode, "names", "repeated date+time rows => one row per court");
     eq(parseWith(n, nm, ctx).rows.map((r) => r.courts), [2, 2, 1], "numbered courts counted, not summed");
+    // Tester round 3: ordinary counts sheets must stay counts.
+    const reserved = parseDelimited("Date,Time,Courts\n3/6/2027,9:00,Reserved\n3/6/2027,10:00,Unavailable\n3/6/2027,11:00,4\n3/6/2027,12:00,Tournament\n3/6/2027,13:00,3\n");
+    const rm = guessMapping(reserved, ctx);
+    eq(rm.courtsMode, "count", "reserved/unavailable/tournament words don't flip to names");
+    eq(parseWith(reserved, rm, ctx).rows.map((r) => r.courts), [0, 0, 4, 0, 3], "reserved/unavailable/tournament read as closed");
+    const where = parseDelimited("Date,Time,Courts,Where\n3/6/2027,9:00,4,Riverside\n3/6/2027,9:00,6,Oak Park\n");
+    const wm = guessMapping(where, ctx);
+    eq([wm.courtsMode, wm.location], ["count", 3], "'Where' is a location column; counts stay counts");
+    eq(parseWith(where, wm, ctx).rows.map((r) => r.courts), [4, 6], "two sites at one time keep their own counts");
+    const twice = parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,9:00,4\n3/6/2027,11:00,2\n3/6/2027,11:00,2\n");
+    const tm = guessMapping(twice, ctx);
+    eq([tm.courtsMode, parseWith(twice, tm, ctx).rows.map((r) => r.courts)], ["count", [4, 2]], "pasted-twice rows stay counts (last wins)");
     // Counts stay counts.
     eq(guessMapping(parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,11:00,6\n3/7/2027,9:00,4\n3/7/2027,11:00,2\n"), ctx).courtsMode, "count", "court counts stay counts");
     // Same time, location in two casings: one row, not two.
