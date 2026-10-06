@@ -8,7 +8,7 @@
 // one team four matches and another six, and nobody notices until a parent
 // emails. So every promise is asserted here, on fixed scenarios AND on a few
 // hundred randomly generated leagues. Exits non-zero on the first failure.
-import { assignUnits, audit, generate, moveOptions, pairPool, mulberry32, poolKey } from "../lib/engine/engine.ts";
+import { assignUnits, audit, generate, moveOptions, pairPool, mulberry32, poolKey, reassignUnitsAfterEdit } from "../lib/engine/engine.ts";
 import { describeRule } from "../lib/engine/rules.ts";
 import { makeLookup } from "../lib/engine/engine.ts";
 import { SPORT_IDS, sportText, SPORTS } from "../lib/engine/sports.ts";
@@ -349,6 +349,121 @@ assert(formatTime("18:30") === "6:30 PM" && formatTime("00:05") === "12:05 AM" &
     assert(describeRule({ id: "x", mode: "must", type: "max_per_weekend", n: 2 }, makeLookup(sampleLeague("tennis"))) === "At most 2 matches per weekend", "tennis rule sentence");
     assert(sportText("Copy for the captain: 3 matches", SPORTS.soccer) === "Copy for the coach: 3 games", "sportText");
     assert(adviceFor("Sheet B has two games at once", tight).tab === "courts" && adviceFor("More than 2 Northside games at the same time", tight).tab === "season", "new messages have advice");
+}
+
+// --- units invalidated by an edit (Tester round 4) ------------------------------------
+// A facility's unit removed, or "units used by one game" raised, used to leave
+// booked games on no unit with no flag. Now the editor re-runs assignUnits on
+// such edits (reassignUnitsAfterEdit) and the audit flags whatever is left.
+{
+    const allReasons = (league: League, ms: Match[]) => [...audit(league, ms).issues.values()].flatMap((v) => [...v.hard, ...v.soft]);
+    const adviceOk = (league: League, ms: Match[], label: string) => {
+        for (const reason of allReasons(league, ms)) assert(adviceFor(reason, league).tab !== null, `${label}: no specific advice for “${reason}”`);
+    };
+    /** Every placed game at a time with named units holds enough of them, or says it doesn't. */
+    const noSilentGaps = (league: League, ms: Match[], label: string) => {
+        const a = audit(league, ms);
+        for (const m of ms) {
+            if (!m.date) continue;
+            const inst = a.ctx.instances.find((i) => i.date === m.date && i.slotId === m.slotId);
+            if (!inst?.unitIds.length) continue;
+            const short = (m.unitIds?.length ?? 0) < a.ctx.unitsPerMatch;
+            const flagged = a.issues.get(m.id)?.soft.some((s) => / assigned(: |$)/.test(s));
+            assert(!short || flagged, `${label}: ${m.id} is short of its units with no flag`);
+        }
+    };
+
+    // (1) Field 1 removed from a soccer facility after generating.
+    const league = sampleLeague("soccer");
+    const r = fixedRun(league);
+    const goneId = "center-u1";
+    const edited: League = {
+        ...league,
+        locations: league.locations.map((l) => (l.id === "loc-center" ? { ...l, units: l.units.filter((u) => u.id !== goneId) } : l)),
+        slots: league.slots.map((s) => ({ ...s, unitIds: s.unitIds.filter((u) => u !== goneId) })),
+    };
+    // As CourtsTab's saveLocation does: the removed unit leaves every game.
+    const stripped = r.matches.map((m) => {
+        if (!m.unitIds?.includes(goneId)) return m;
+        const rest = { ...m };
+        delete rest.unitIds;
+        return rest;
+    });
+    const lost = stripped.filter((m, i) => m !== r.matches[i]);
+    assert(lost.length > 0, "unit removed: some games were on Field 1");
+    const before = audit(edited, stripped);
+    for (const m of lost) assert(before.issues.get(m.id)?.soft.some((s) => s === "No field assigned" || s === "No field assigned: every field is booked at that time"), `unit removed: ${m.id} is flagged before reassigning`);
+    adviceOk(edited, stripped, "unit removed, before");
+    const fixed = reassignUnitsAfterEdit(league, edited, stripped);
+    noSilentGaps(edited, fixed, "unit removed");
+    adviceOk(edited, fixed, "unit removed, after");
+    let moved = 0;
+    let stuck = 0;
+    for (const m of fixed) {
+        const was = r.matches.find((x) => x.id === m.id)!;
+        if (was.unitIds && !was.unitIds.includes(goneId)) assert(JSON.stringify(m.unitIds) === JSON.stringify(was.unitIds), `unit removed: ${m.id} kept its unit (stable)`);
+        if (!was.unitIds?.includes(goneId)) continue;
+        if (m.unitIds?.length) {
+            assert(m.unitIds[0] !== goneId && edited.locations[0].units.some((u) => u.id === m.unitIds![0]), "unit removed: moved to a live field");
+            moved++;
+        } else {
+            assert(audit(edited, fixed).issues.get(m.id)?.soft.includes("No field assigned: every field is booked at that time"), "unit removed: a game with no free field says so");
+            stuck++;
+        }
+    }
+    assert(moved > 0, `unit removed: games move to a free field where there is one (moved ${moved}, stuck ${stuck})`);
+    const seen = new Set<string>();
+    for (const m of fixed) for (const u of m.unitIds ?? []) {
+        const k = `${m.date}|${m.time}|${u}`;
+        assert(!seen.has(k), "unit removed: no field double-booked after reassigning");
+        seen.add(k);
+    }
+    // Unrelated edits don't touch the schedule (same array back).
+    const renamed = { ...league, teams: league.teams.map((x, i) => (i === 0 ? { ...x, name: "Renamed" } : x)) };
+    assert(reassignUnitsAfterEdit(league, renamed, r.matches) === r.matches, "a team rename doesn't reassign units");
+    assert(reassignUnitsAfterEdit(league, { ...league, slots: [...league.slots] }, r.matches) === r.matches, "a no-op slot edit returns the same schedule");
+    // A game simply missing its unit while one is free: the bare message, and reassigning fixes it.
+    const bare = r.matches.map((m, i) => (i === 0 ? { ...m, unitIds: undefined } : m));
+    assert(audit(league, bare).issues.get(r.matches[0].id)?.soft.includes("No field assigned"), "a game with a free field but none assigned is flagged");
+    assert(adviceFor("No field assigned", league).tab === "courts" && adviceFor("No sheet assigned: every sheet is booked at that time", sampleLeague("hockey")).tab === "courts", "advice for missing units");
+    assert(JSON.stringify(assignUnits(league, bare)) === JSON.stringify(r.matches), "reassigning gives the game its field back");
+
+    // (2) Hockey: "sheets used by one game" raised from 1 to 2.
+    const hockey = sampleLeague("hockey");
+    const rh = fixedRun(hockey);
+    const two: League = { ...hockey, settings: { ...hockey.settings, courtsPerMatch: 2 } };
+    const raw = audit(two, rh.matches);
+    for (const m of rh.matches) assert(raw.issues.get(m.id)?.soft.some((s) => s.startsWith("Only 1 of 2 sheets assigned")), `units raised: ${m.id} holding 1 of 2 sheets is flagged`);
+    adviceOk(two, rh.matches, "units raised, before");
+    const rh2 = reassignUnitsAfterEdit(hockey, two, rh.matches);
+    noSilentGaps(two, rh2, "units raised");
+    adviceOk(two, rh2, "units raised, after");
+    const withTwo = rh2.filter((m) => m.unitIds?.length === 2);
+    assert(withTwo.length > 0, "units raised: games get 2 sheets where 2 are free");
+    assert(rh2.every((m) => !m.unitIds || m.unitIds.length === 2), "units raised: no game keeps a half assignment");
+    const seen2 = new Set<string>();
+    for (const m of withTwo) for (const u of m.unitIds!) {
+        const k = `${m.date}|${m.time}|${u}`;
+        assert(!seen2.has(k), "units raised: no sheet double-booked");
+        seen2.add(k);
+    }
+    for (const m of rh2.filter((x) => !x.unitIds)) assert(audit(two, rh2).issues.get(m.id)?.soft.includes("No sheet assigned: every sheet is booked at that time"), "units raised: the rest say every sheet is booked");
+}
+
+// --- advice speaks the league's sport ------------------------------------------------
+{
+    const hockey = sampleLeague("hockey");
+    const a = adviceFor("Example Aces 10U already plays that day", hockey);
+    assert(a.tip.includes("Max games per team per day") && !/\bmatch(es)?\b/.test(a.tip), `hockey advice uses game words: ${a.tip}`);
+    assert(adviceFor("Every sheet is already booked at that time", hockey).tabLabel === "Facilities & ice time", "hockey tab label is the real tab name");
+    assert(adviceFor("Every sheet is already booked at that time", hockey).tip.includes("add more sheets"), "hockey advice says sheets");
+    assert(adviceFor("Every court is already booked at that time", sampleLeague("tennis")).tabLabel === "Facilities & court time", "tennis tab label");
+    for (const sport of SPORT_IDS) {
+        const l = sampleLeague(sport);
+        const t = SPORTS[sport];
+        for (const reason of [`Every ${t.unit} is already booked at that time`, `The facility’s spreadsheet has no ${t.time} then`, `${t.unitLabel(0)} isn’t listed as free at that time`, `No ${t.unit} assigned`])
+            assert(!/\bunits?\b/.test(adviceFor(reason, l).tip), `${sport}: advice never says “unit”: ${adviceFor(reason, l).tip}`);
+    }
 }
 
 // --- performance: a big league stays interactive ----------------------------------

@@ -100,7 +100,7 @@ export default function ImportDialog({
             if (!id) {
                 id = uid("l");
                 nameToId.set(k, id);
-                locations.push({ id, name: name.trim(), address: "", mapUrl: "", notes: "Added from a facility availability sheet.", units: [] });
+                locations.push({ id, name: name.trim(), address: "", mapUrl: "", notes: "Added from a facility availability spreadsheet.", units: [] });
             }
             return id;
         };
@@ -196,7 +196,7 @@ export default function ImportDialog({
                             </div>
                             <div className="flex flex-wrap items-end gap-2">
                                 {sheets.length > 1 && (
-                                    <Field label="Sheet" htmlFor="imp-sheet">
+                                    <Field label="Worksheet" htmlFor="imp-sheet">
                                         <select
                                             id="imp-sheet"
                                             className="input"
@@ -220,10 +220,10 @@ export default function ImportDialog({
                                 </button>
                             </div>
                         </div>
-                        {sheets.length > 1 && <p className="-mt-3 text-xs text-muted">Import each sheet in turn. Each import only replaces the dates it contains.</p>}
+                        {sheets.length > 1 && <p className="-mt-3 text-xs text-muted">Import each worksheet in turn. Each import only replaces the dates it contains.</p>}
 
                         <section className="grid gap-3 rounded-lg bg-surface-2 p-3">
-                            <h3 className="font-semibold">How the sheet is laid out (our best guess, change anything that’s wrong)</h3>
+                            <h3 className="font-semibold">How the file is laid out (our best guess, change anything that’s wrong)</h3>
                             <div className="grid gap-3 sm:grid-cols-2">
                                 <Field label="Layout" htmlFor="imp-layout">
                                     <select id="imp-layout" className="input" value={mapping.layout} onChange={(e) => setM({ layout: e.target.value as Layout })}>
@@ -246,8 +246,8 @@ export default function ImportDialog({
                                     <>
                                         {colSelect("imp-date", "Date column", "date", "Choose…")}
                                         {colSelect("imp-time", "Start time column", "time", "In the date column")}
-                                        {colSelect("imp-courts", `${cap(t.units)} column`, "courts", "Not in this sheet")}
-                                        {colSelect("imp-loc", "Location column", "location", "Not in this sheet")}
+                                        {colSelect("imp-courts", `${cap(t.units)} column`, "courts", "Not in this file")}
+                                        {colSelect("imp-loc", "Location column", "location", "Not in this file")}
                                     </>
                                 ) : (
                                     <Field label={mapping.layout === "dates-down" ? "Column with the dates" : "Column with the times"} htmlFor="imp-label">
@@ -275,7 +275,7 @@ export default function ImportDialog({
                                     </p>
                                 )}
                                 {mapping.layout === "rows" && mapping.courts === null && mapping.courtsMode === "count" && (
-                                    <Field label={`${cap(t.units)} for every slot`} htmlFor="imp-default-courts" hint={`The sheet has no ${t.units} column.`}>
+                                    <Field label={`${cap(t.units)} for every slot`} htmlFor="imp-default-courts" hint={`The file has no ${t.units} column.`}>
                                         <NumberInput id="imp-default-courts" value={defaultCourts} min={1} max={200} onChange={setDefaultCourts} />
                                     </Field>
                                 )}
@@ -296,7 +296,7 @@ export default function ImportDialog({
                                                 return (
                                                     <th key={o.c} className={`whitespace-nowrap px-2 py-1 text-left ${role ? "bg-accent-soft text-fg" : "text-muted"}`}>
                                                         {colName(o.c)}
-                                                        {role && <span className="ml-1 font-normal">({role})</span>}
+                                                        {role && <span className="ml-1 font-normal">({role === "courts" ? t.units : role})</span>}
                                                     </th>
                                                 );
                                             })}

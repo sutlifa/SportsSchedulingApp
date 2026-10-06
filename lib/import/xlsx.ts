@@ -172,7 +172,7 @@ export async function readXlsx(data: ArrayBuffer | Uint8Array): Promise<Sheet[]>
         if (!xml) continue;
         sheets.push({ name: a.name ?? `Sheet ${sheets.length + 1}`, rows: readSheet(xml, shared, dateStyles) });
     }
-    if (!sheets.length) throw new XlsxError("That workbook has no readable sheets.");
+    if (!sheets.length) throw new XlsxError("That workbook has no readable worksheets.");
     return sheets;
 }
 

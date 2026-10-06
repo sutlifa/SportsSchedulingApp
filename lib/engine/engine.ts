@@ -957,6 +957,39 @@ export function assignUnits(league: League, matches: Match[], ctxIn?: Ctx): Matc
     });
 }
 
+/**
+ * True when an edit could change which units a placed game may hold: a
+ * facility's units, a slot's or an upload's free units, or the settings
+ * (units per game, season dates). Reference checks only -- the editor
+ * replaces these arrays on every edit to them -- so a team rename doesn't
+ * pay for a full prepare().
+ */
+export function unitInputsChanged(before: League, after: League): boolean {
+    return before.locations !== after.locations || before.slots !== after.slots || before.availability !== after.availability || before.settings !== after.settings;
+}
+
+/**
+ * assignUnits for an edit: re-run it when the edit touched what units depend
+ * on, so a game whose sheet was removed (or that now needs 2 fields, not 1)
+ * moves to a free one straight away instead of sitting on nothing until the
+ * next Generate. Returns the SAME array when nothing moved, so an unrelated
+ * edit doesn't churn the schedule.
+ */
+export function reassignUnitsAfterEdit(before: League, after: League, matches: Match[]): Match[] {
+    if (!unitInputsChanged(before, after)) return matches;
+    const next = assignUnits(after, matches);
+    return next.every((m, i) => m === matches[i]) ? matches : next;
+}
+
+/**
+ * The audit's message for a game short of its units. Exported so advice.ts
+ * and verify-engine match the exact wording.
+ */
+export function unitShortText(t: Terms, held: number, need: number, freeExists: boolean): string {
+    const head = held === 0 ? `No ${t.unit} assigned` : `Only ${held} of ${need} ${t.units} assigned`;
+    return freeExists ? head : `${head}: every ${t.unit} is booked at that time`;
+}
+
 export function sortMatches(matches: Match[]): Match[] {
     return [...matches].sort((a, b) => {
         if (!a.date !== !b.date) return a.date ? -1 : 1;
@@ -1009,9 +1042,9 @@ export function audit(league: League, matches: Match[]): Audit {
         const v = check(ctx, st, m.home, m.away, spot, cap, false);
         if (spot.idx < 0) {
             if (!ctx.league.locations.some((l) => l.id === m.locationId)) v.hard.unshift("Its location was deleted");
-            // The facility's own sheet covers this date and has no court time
+            // The facility's own spreadsheet covers this date and has no court time
             // at this hour (or says closed): that's a hard fact, not a taste.
-            else if (ctx.covered.has(`${m.locationId}|${m.date}`)) v.hard.unshift(`The facility’s sheet has no ${ctx.terms.time} then`);
+            else if (ctx.covered.has(`${m.locationId}|${m.date}`)) v.hard.unshift(`The facility’s spreadsheet has no ${ctx.terms.time} then`);
             else v.soft.unshift("This time is no longer in the weekly slots or the facility’s availability");
         }
         place(ctx, st, m.home, m.away, spot, 1);
@@ -1042,6 +1075,30 @@ export function audit(league: League, matches: Match[]): Audit {
             v.hard.push(`${name} has two ${ctx.terms.matches} at once`);
             issues.set(id, v);
         }
+    }
+    // A game at a time whose facility names its units must hold
+    // `unitsPerMatch` of them. Without this check a game whose sheet was
+    // removed from the facility (or that held 1 field when "fields used by
+    // one game" went up to 2) showed just the facility's name, with no flag
+    // and a blank unit column in the CSV -- a coach turns up and there's no
+    // sheet for them. Soft, like "isn't listed as free": the game still has
+    // its time; it's the unit that needs sorting. A game whose units are
+    // already flagged as not free is left to that message rather than told
+    // twice. The suffix says whether a free unit exists, because the fix
+    // differs: none free means change the slot or move the game; some free
+    // means regenerate (or Move) would simply give it one.
+    for (const m of matches) {
+        const spot = spots.get(m.id);
+        if (!spot || spot.idx < 0 || !matchTeamsExist(ctx, m)) continue;
+        const inst = ctx.instances[spot.idx];
+        if (!inst.unitIds.length) continue;
+        const held = m.unitIds ?? [];
+        if (held.some((u) => !inst.unitIds.includes(u)) || held.length >= ctx.unitsPerMatch) continue;
+        const taken = new Set([...unitUse.keys()].filter((k) => k.startsWith(`${spot.idx}|`)).map((k) => k.slice(k.indexOf("|") + 1)));
+        const free = inst.unitIds.filter((u) => !taken.has(u)).length;
+        const v = issues.get(m.id) ?? { hard: [], soft: [] };
+        v.soft.push(unitShortText(ctx.terms, held.length, ctx.unitsPerMatch, free >= ctx.unitsPerMatch - held.length));
+        issues.set(m.id, v);
     }
 
     const teams = new Map<string, TeamSummary>();

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { DAY_LONG, formatDate, formatTime, parseTimes, toMinutes } from "@/lib/engine/dates";
 import { mapSearchUrl, safeMapUrl } from "@/lib/engine/sanitize";
-import { cap, type Terms } from "@/lib/engine/sports";
+import { cap, countOf, type Terms } from "@/lib/engine/sports";
 import type { DayOfWeek, League, Location, Rule, Slot, Unit } from "@/lib/engine/types";
 import ImportDialog from "./ImportDialog";
 import { locationLink } from "./ScheduleTab";
@@ -270,17 +270,17 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                                 <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Facility availability</h2>
                                 <p className="max-w-3xl text-sm text-muted">
                                     Upload the spreadsheet a facility sends with its dates, times and {t.units}. For every date it covers, it replaces that facility’s weekly slots;
-                                    other dates keep the weekly pattern. A time marked closed or 0 {t.units} blocks it. If the sheet names its {t.units} ({t.unitLabel(0)}…),
+                                    other dates keep the weekly pattern. A time marked closed or 0 {t.units} blocks it. If the file names its {t.units} ({t.unitLabel(0)}…),
                                     they’re added to the facility.
                                 </p>
                             </div>
                             <button className="btn-primary" onClick={() => setImporting(true)}>
-                                Upload a facility sheet
+                                Upload a facility spreadsheet
                             </button>
                         </div>
                         {imported && <p className="text-sm font-semibold text-ok">{imported}</p>}
                         {data.availability.length === 0 && (
-                            <div className="card p-5 text-sm text-muted">No facility sheets uploaded. The weekly time slots above are used for every date.</div>
+                            <div className="card p-5 text-sm text-muted">No facility spreadsheets uploaded. The weekly time slots above are used for every date.</div>
                         )}
                         {data.locations
                             .map((l) => ({ l, rows: data.availability.filter((a) => a.locationId === l.id) }))
@@ -421,8 +421,10 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
 /**
  * Saves a facility. Units removed from it are also removed from every slot,
  * uploaded time and booked game that named them -- a game can't stay on a
- * sheet that no longer exists. A slot that loses its last named unit keeps
- * its "at once" number, which was kept in step with its units.
+ * sheet that no longer exists. Workspace's `change` then re-runs assignUnits,
+ * which moves those games to a free unit at the same time where there is one
+ * (and the audit flags any left without). A slot that loses its last named
+ * unit keeps its "at once" number, which was kept in step with its units.
  */
 function saveLocation(d: Doc, l: Location): Doc {
     const old = d.data.locations.find((x) => x.id === l.id);
@@ -716,7 +718,7 @@ function SlotDialog({ slot, props, onClose, onSave, onDelete }: { slot: Slot; pr
                         </select>
                     </Field>
                     {loc?.units.length ? (
-                        <Field label={`${cap(t.units)} free`} hint={`${Math.floor(s.unitIds.length / cpm)} ${t.matches} at once`}>
+                        <Field label={`${cap(t.units)} free`} hint={`${countOf(Math.floor(s.unitIds.length / cpm), t)} at once`}>
                             <UnitToggles
                                 units={loc.units}
                                 value={s.unitIds}
@@ -734,7 +736,8 @@ function SlotDialog({ slot, props, onClose, onSave, onDelete }: { slot: Slot; pr
                 </Field>
                 {booked > 0 && (
                     <p className="text-sm text-muted">
-                        {booked} scheduled {t.matches} use this slot. Changing it flags any that no longer fit; they aren’t moved automatically.
+                        {booked === 1 ? `1 scheduled ${t.match} uses` : `${booked} scheduled ${t.matches} use`} this slot. Changing it flags any that no longer fit;
+                        they keep their time, though their {t.units} may be reassigned.
                     </p>
                 )}
                 <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">

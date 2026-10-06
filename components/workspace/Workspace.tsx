@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { downloadText, fileSafe, makeBackup } from "@/lib/client/backup";
 import { storeFor, writeMirror, type LeagueRecord, type LeagueStore, type Mode } from "@/lib/client/store";
-import { audit, makeLookup } from "@/lib/engine/engine";
+import { audit, makeLookup, reassignUnitsAfterEdit } from "@/lib/engine/engine";
 import { firstOpenStep, readiness, type StepId } from "@/lib/engine/readiness";
 import { termsFor } from "@/lib/engine/sports";
 import BracketsTab from "./BracketsTab";
@@ -88,9 +88,19 @@ function Editor({ store, mode, rec, userKey, setup }: { store: LeagueStore; mode
         latest.current = doc;
     }, [doc]);
 
+    // Every edit that touches facilities, slots, uploads or settings re-runs
+    // assignUnits (stable: valid units stay put). It lives here, not in each
+    // tab, because a sheet can vanish from under a booked game in many ways --
+    // a facility edit, a slot edit, an import, "units used by one game" going
+    // up, a restored backup -- and missing one left games on no unit with no
+    // flag. Generate already assigns units itself; this covers the edits.
     const change = useCallback((fn: (d: Doc) => Doc) => {
         dirty.current = true;
-        setDoc((d) => fn(d));
+        setDoc((d) => {
+            const next = fn(d);
+            const matches = reassignUnitsAfterEdit(d.data, next.data, next.schedule.matches);
+            return matches === next.schedule.matches ? next : { ...next, schedule: { ...next.schedule, matches } };
+        });
         setStatus((s) => (s.kind === "conflict" ? s : { kind: "pending" }));
     }, []);
 

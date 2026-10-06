@@ -71,12 +71,14 @@ async function walk(sport, t) {
     try {
         // --- 1 -----------------------------------------------------------------
         STEP("1 create the league");
-        await page.goto(BASE);
+        await page.goto(`${BASE}/new`);
         await page.locator("#league-name").fill(leagueName);
         await page.locator("#league-sport").selectOption(sport);
-        await page.getByText("A blank league").click();
-        await page.getByRole("button", { name: "Create league" }).click();
+        await page.getByText("Guided setup", { exact: true }).click();
+        await page.getByRole("button", { name: "Start guided setup" }).click();
         await page.waitForURL(/\/league\//);
+        // A blank league opens the setup wizard; the tutorial runs in the tabs.
+        await page.getByRole("button", { name: "Exit setup" }).click();
         await page.locator("#season-start").waitFor();
         ok(await page.locator("#season-start").isVisible(), "opens on the Season tab");
         ok((await page.locator("#match-minutes").inputValue()) === String(t.minutes), `${t.match} length defaults to ${t.minutes} for ${t.name}`);
@@ -151,7 +153,7 @@ async function walk(sport, t) {
 
         // --- 6 -----------------------------------------------------------------
         STEP("6 facility sheet");
-        await page.getByRole("button", { name: "Upload a facility sheet" }).click();
+        await page.getByRole("button", { name: "Upload a facility spreadsheet" }).click();
         await dialog().locator('input[type="file"]').setInputFiles(new URL(`../../public/tutorial/${file}.xlsx`, import.meta.url).pathname);
         await see("What was read");
         ok((await page.locator("#imp-layout").inputValue()) === "rows", "layout: one row per time slot");
