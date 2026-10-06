@@ -20,7 +20,7 @@ import type { Doc, Tab, TabProps } from "./types";
  * mount -- never during render, which would hydrate differently on the
  * server and the client.
  */
-export default function Workspace({ mode, id, initial }: { mode: Mode; id: string; initial: LeagueRecord | null }) {
+export default function Workspace({ mode, id, initial, userKey = "" }: { mode: Mode; id: string; initial: LeagueRecord | null; userKey?: string }) {
     const store = storeFor(mode);
     const [rec, setRec] = useState<LeagueRecord | null>(initial);
     const [missing, setMissing] = useState(false);
@@ -50,7 +50,7 @@ export default function Workspace({ mode, id, initial }: { mode: Mode; id: strin
         );
     }
     if (!rec) return <div className="mx-auto max-w-6xl px-4 py-10 text-muted">Loading league…</div>;
-    return <Editor store={store} mode={mode} rec={rec} />;
+    return <Editor store={store} mode={mode} rec={rec} userKey={userKey} />;
 }
 
 type Status =
@@ -68,7 +68,7 @@ const TABS: { id: Tab; label: string }[] = [
     { id: "season", label: "Season" },
 ];
 
-function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: LeagueRecord }) {
+function Editor({ store, mode, rec, userKey }: { store: LeagueStore; mode: Mode; rec: LeagueRecord; userKey: string }) {
     const [doc, setDoc] = useState<Doc>({ name: rec.name, data: rec.data, schedule: rec.schedule });
     const [tab, setTab] = useState<Tab>(rec.data.teams.length ? "schedule" : "season");
     const [status, setStatus] = useState<Status>({ kind: "saved" });
@@ -78,6 +78,8 @@ function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: Lea
     const dirty = useRef(false);
     const saving = useRef(false);
     const blocked = useRef(false);
+    /** The save request currently on the wire, if any. */
+    const inflight = useRef<Promise<unknown> | null>(null);
     const latest = useRef(doc);
     useEffect(() => {
         latest.current = doc;
@@ -96,7 +98,10 @@ function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: Lea
         setStatus({ kind: "saving" });
         // Snapshot first: `latest` can move on while the request is in flight.
         const snap = latest.current;
-        const r = await store.save({ id: rec.id, name: snap.name, data: snap.data, schedule: snap.schedule, version: versionRef.current });
+        const p = store.save({ id: rec.id, name: snap.name, data: snap.data, schedule: snap.schedule, version: versionRef.current });
+        inflight.current = p;
+        const r = await p;
+        inflight.current = null;
         saving.current = false;
         if (r.ok) {
             versionRef.current = r.version;
@@ -127,25 +132,35 @@ function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: Lea
     // would drop the last <700ms of edits. Save them on the way out instead.
     // The request outlives the component: client-side navigation keeps the
     // page (and its fetch) alive.
+    //
+    // If a save is already on the wire, wait for it: its continuation (in
+    // doSave, registered first) bumps versionRef, and only then is this save
+    // sent at the right version. Sending it alongside would 409 against our
+    // own previous save and lose the edit. The mirror is written right away
+    // too, because its 400ms debounce is cancelled by the same unmount.
     useEffect(() => {
         const latestRef = latest;
         const dirtyRef = dirty;
         const blockedRef = blocked;
         const version = versionRef;
+        const inflightRef = inflight;
         return () => {
-            if (!dirtyRef.current || blockedRef.current) return;
             const snap = latestRef.current;
-            void store.save({ id: rec.id, name: snap.name, data: snap.data, schedule: snap.schedule, version: version.current });
+            if (mode === "cloud") writeMirror(userKey, { id: rec.id, name: snap.name, data: snap.data, schedule: snap.schedule });
+            if (!dirtyRef.current || blockedRef.current) return;
+            dirtyRef.current = false;
+            const send = () => store.save({ id: rec.id, name: snap.name, data: snap.data, schedule: snap.schedule, version: version.current });
+            void (inflightRef.current ?? Promise.resolve()).then(send, send);
         };
-    }, [store, rec.id]);
+    }, [store, rec.id, mode, userKey]);
 
     // Cloud leagues are mirrored into this browser on every change (see
     // writeMirror), so a database outage never strands the person's work.
     useEffect(() => {
         if (mode !== "cloud") return;
-        const t = setTimeout(() => writeMirror({ id: rec.id, name: doc.name, data: doc.data, schedule: doc.schedule }), 400);
+        const t = setTimeout(() => writeMirror(userKey, { id: rec.id, name: doc.name, data: doc.data, schedule: doc.schedule }), 400);
         return () => clearTimeout(t);
-    }, [doc, mode, rec.id]);
+    }, [doc, mode, rec.id, userKey]);
 
     const downloadBackup = () => downloadText(`${fileSafe(doc.name)}-backup.json`, makeBackup(doc.name, doc.data, doc.schedule), "application/json");
 
@@ -247,7 +262,7 @@ function Editor({ store, mode, rec }: { store: LeagueStore; mode: Mode; rec: Lea
                 {tab === "teams" && <TeamsTab {...props} />}
                 {tab === "brackets" && <BracketsTab {...props} />}
                 {tab === "courts" && <CourtsTab {...props} />}
-                {tab === "season" && <SeasonTab {...props} leagueId={rec.id} store={store} />}
+                {tab === "season" && <SeasonTab {...props} leagueId={rec.id} store={store} userKey={userKey} />}
             </div>
         </div>
     );

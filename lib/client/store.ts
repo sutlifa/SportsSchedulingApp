@@ -203,46 +203,64 @@ export async function browserLeagues(): Promise<LeagueRecord[]> {
 // uploaded automatically, so it can't overwrite newer cloud work.
 // ---------------------------------------------------------------------------
 
-const MIRROR_KEY = "courtside.mirror.v1";
+// Keyed per signed-in account: on a shared computer, one person's leagues
+// (captain phone numbers included) must never show up for the next person.
+// Signing out clears every mirror in this browser (clearAllMirrors).
+const MIRROR_PREFIX = "courtside.mirror.";
+const mirrorKey = (userKey: string) => `${MIRROR_PREFIX}v2.${userKey}`;
 const MIRROR_MAX = 15;
 
 export type Mirror = { id: string; name: string; data: League; schedule: Schedule; savedAt: string };
 
-function readMirrorMap(): Record<string, Mirror> {
+function readMirrorMap(userKey: string): Record<string, Mirror> {
     try {
-        const raw = window.localStorage.getItem(MIRROR_KEY);
+        const raw = window.localStorage.getItem(mirrorKey(userKey));
         return raw ? (JSON.parse(raw) as Record<string, Mirror>) : {};
     } catch {
         return {};
     }
 }
 
-export function writeMirror(m: Omit<Mirror, "savedAt">): void {
+export function writeMirror(userKey: string, m: Omit<Mirror, "savedAt">): void {
+    if (!userKey) return;
     try {
-        const all = readMirrorMap();
+        const all = readMirrorMap(userKey);
         all[m.id] = { ...m, savedAt: new Date().toISOString() };
         // Keep the most recently edited leagues; localStorage is ~5MB.
         const keep = Object.values(all)
             .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
             .slice(0, MIRROR_MAX);
-        window.localStorage.setItem(MIRROR_KEY, JSON.stringify(Object.fromEntries(keep.map((x) => [x.id, x]))));
+        window.localStorage.setItem(mirrorKey(userKey), JSON.stringify(Object.fromEntries(keep.map((x) => [x.id, x]))));
     } catch {
         // Storage full or blocked: the cloud copy is still the real one.
     }
 }
 
-export function readMirrors(): Mirror[] {
-    return Object.values(readMirrorMap())
+export function readMirrors(userKey: string): Mirror[] {
+    if (!userKey) return [];
+    return Object.values(readMirrorMap(userKey))
         .filter((m) => m && typeof m.id === "string")
         .map((m) => ({ ...m, name: typeof m.name === "string" ? m.name : "Untitled league", data: sanitizeLeague(m.data), schedule: sanitizeSchedule(m.schedule) }))
         .sort((a, b) => b.savedAt.localeCompare(a.savedAt));
 }
 
-export function removeMirror(id: string): void {
+export function removeMirror(userKey: string, id: string): void {
     try {
-        const all = readMirrorMap();
+        const all = readMirrorMap(userKey);
         delete all[id];
-        window.localStorage.setItem(MIRROR_KEY, JSON.stringify(all));
+        window.localStorage.setItem(mirrorKey(userKey), JSON.stringify(all));
+    } catch {
+        // ignore
+    }
+}
+
+/** On sign-out: remove every account's mirrors from this browser. */
+export function clearAllMirrors(): void {
+    try {
+        for (let i = window.localStorage.length - 1; i >= 0; i--) {
+            const k = window.localStorage.key(i);
+            if (k?.startsWith(MIRROR_PREFIX)) window.localStorage.removeItem(k);
+        }
     } catch {
         // ignore
     }

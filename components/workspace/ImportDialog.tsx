@@ -75,7 +75,7 @@ export default function ImportDialog({
 
     // Location handling: a Location column wins per row; otherwise the chosen location.
     const locByName = new Map(league.locations.map((l) => [l.name.trim().toLowerCase(), l]));
-    const sheetLocNames = [...new Set((parsed?.rows ?? []).map((r) => r.location).filter((x): x is string => !!x))];
+    const sheetLocNames = [...new Map((parsed?.rows ?? []).filter((r) => r.location).map((r) => [r.location!.trim().toLowerCase(), r.location!.trim()])).values()];
     const unknownLocs = sheetLocNames.filter((n) => !locByName.has(n.trim().toLowerCase()));
     const needsFallback = !parsed || parsed.rows.some((r) => !r.location);
     const fallbackOk = !needsFallback || locationId !== "" || newLocName.trim() !== "";
@@ -101,14 +101,15 @@ export default function ImportDialog({
             return id;
         };
         const fallbackId = locationId || (newLocName.trim() ? ensure(newLocName) : "");
-        const rows: Availability[] = parsed.rows.map((r) => ({
-            id: uid("a"),
-            date: r.date,
-            time: r.time,
-            locationId: r.location ? ensure(r.location) : fallbackId,
-            courts: r.courts,
-            bracketIds,
-        }));
+        // Re-importing a sheet keeps the id of every (location, date, time)
+        // that already existed, so matches booked into those times stay
+        // attached to them. (The engine also falls back to matching by time
+        // and place, but stable ids keep the saved data honest.)
+        const existing = new Map(league.availability.map((a) => [`${a.locationId}|${a.date}|${a.time}`, a.id]));
+        const rows: Availability[] = parsed.rows.map((r) => {
+            const loc = r.location ? ensure(r.location) : fallbackId;
+            return { id: existing.get(`${loc}|${r.date}|${r.time}`) ?? uid("a"), date: r.date, time: r.time, locationId: loc, courts: r.courts, bracketIds };
+        });
         const covered = new Set(rows.map((r) => `${r.locationId}|${r.date}`));
         const kept = league.availability.filter((a) => !covered.has(`${a.locationId}|${a.date}`));
         onImport(
@@ -241,7 +242,15 @@ export default function ImportDialog({
                                         </select>
                                     </Field>
                                 )}
-                                {mapping.layout === "rows" && mapping.courts === null && (
+                                {mapping.layout === "rows" && (
+                                    <Field label="Each row is" htmlFor="imp-courts-mode">
+                                        <select id="imp-courts-mode" className="input" value={mapping.courtsMode} onChange={(e) => setM({ courtsMode: e.target.value === "names" ? "names" : "count" })}>
+                                            <option value="count">{mapping.courts === null ? "A time slot" : "A time slot with a number of courts"}</option>
+                                            <option value="names">{mapping.courts === null ? "One court (rows at the same time are added up)" : "One court, by name (courts at the same time are counted)"}</option>
+                                        </select>
+                                    </Field>
+                                )}
+                                {mapping.layout === "rows" && mapping.courts === null && mapping.courtsMode === "count" && (
                                     <Field label="Courts for every slot" htmlFor="imp-default-courts" hint="The sheet has no courts column.">
                                         <NumberInput id="imp-default-courts" value={defaultCourts} min={1} max={200} onChange={setDefaultCourts} />
                                     </Field>

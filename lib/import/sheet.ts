@@ -33,6 +33,13 @@ export type Mapping = {
     time: number | null;
     courts: number | null;
     location: number | null;
+    /**
+     * rows layout: what the courts column holds. "count" = how many courts
+     * ("4"); "names" = one row per court ("Court 7", "Stadium"), so courts at
+     * a time = distinct names at that date+time. With no courts column,
+     * "names" means each row is one court.
+     */
+    courtsMode: "count" | "names";
     /** grid layouts: the column holding the row labels (dates or times). */
     label: number;
 };
@@ -274,7 +281,7 @@ const looksLikeDate = (c: Cell, ctx: Ctx) => readDate(c, ctx) !== null;
 
 export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     const scan = Math.min(grid.length, 25);
-    const base: Mapping = { layout: "rows", header: -1, date: null, time: null, courts: null, location: null, label: 0 };
+    const base: Mapping = { layout: "rows", header: -1, date: null, time: null, courts: null, location: null, courtsMode: "count", label: 0 };
 
     // Grid layouts: a row whose cells (after the first filled one) are mostly times, or mostly dates.
     for (let r = 0; r < scan; r++) {
@@ -342,7 +349,44 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     const courts = pick(KEYWORDS.courts, (c) => readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx)), 0.6);
     let location: number | null = null;
     for (let c = 0; c < width; c++) if (!taken.has(c) && KEYWORDS.location.test(headText(c))) location = c;
-    return { ...base, header, date, time, courts, location };
+    return { ...base, header, date, time, courts, location, courtsMode: guessCourtsMode(grid, header, date, time, courts, location, ctx) };
+}
+
+/** "Court 7", "Ct. 3", "#4": a reference to ONE court, not a count. */
+const SINGLE_COURT = /^(court|ct)\.?\s*#?\s*\d+[a-z]?$|^#\s*\d+$/i;
+
+/**
+ * Count vs names. Names when most courts cells name a single court or are
+ * words that aren't counts ("Stadium"), or when the same date+time repeats
+ * on many rows -- a sheet with one row per court, where "7" is court seven,
+ * not seven courts.
+ */
+function guessCourtsMode(grid: Cell[][], header: number, date: number | null, time: number | null, courts: number | null, location: number | null, ctx: Ctx): "count" | "names" {
+    if (date === null) return "count";
+    const keys = new Map<string, number>();
+    let lastDate: string | null = null;
+    let named = 0;
+    let filled = 0;
+    for (const row of grid.slice(header + 1, header + 201)) {
+        if (nonEmpty(row).length === 0) continue;
+        const d: string | null = readDate(row[date], ctx)?.date ?? (isBlank(row[date]) ? lastDate : null);
+        if (!d) continue;
+        lastDate = d;
+        const t = time !== null ? readTime(row[time]) : readDate(row[date], ctx)?.time;
+        if (!t) continue;
+        const k = `${d}|${t}|${location !== null ? cellText(row[location]).toLowerCase() : ""}`;
+        keys.set(k, (keys.get(k) ?? 0) + 1);
+        if (courts !== null && !isBlank(row[courts])) {
+            filled++;
+            const c = row[courts];
+            if (typeof c === "string" && (SINGLE_COURT.test(c.trim()) || readCourts(c) === undefined)) named++;
+        }
+    }
+    const rows = [...keys.values()].reduce((a, b) => a + b, 0);
+    const repeated = [...keys.values()].filter((n) => n > 1).reduce((a, b) => a + b, 0);
+    if (filled && named / filled >= 0.5) return "names";
+    if (rows >= 4 && repeated / rows >= 0.3) return "names";
+    return "count";
 }
 
 /** The column under a grid header that holds the row labels: the first filled one, nudged to where the data actually is. */
@@ -363,8 +407,12 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
     const out = new Map<string, ParsedRow>();
     const problems: Problem[] = [];
     let duplicates = 0;
+    // Location casing varies within one sheet ("Riverside Main" / "riverside
+    // main"); the same court time must not be counted twice because of it.
+    const keyOf = (row: { date: string; time: string; location: string | null }) => `${row.date}|${row.time}|${(row.location ?? "").trim().toLowerCase()}`;
+    const named = new Map<string, { row: ParsedRow; names: Set<string> }>();
     const add = (row: ParsedRow) => {
-        const k = `${row.date}|${row.time}|${row.location ?? ""}`;
+        const k = keyOf(row);
         if (out.has(k)) duplicates++;
         out.set(k, row);
     };
@@ -392,6 +440,21 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                 problem(line, m.time !== null && !isBlank(row[m.time]) ? `Couldn’t read the time “${cellText(row[m.time])}”` : "No start time");
                 continue;
             }
+            const loc = m.location !== null ? cellText(row[m.location]) || null : null;
+            if (m.courtsMode === "names") {
+                // One row per court: collect distinct court names per time.
+                const k = keyOf({ date: d.date, time, location: loc });
+                const entry = named.get(k) ?? { row: { date: d.date, time, courts: 0, location: loc, line }, names: new Set<string>() };
+                named.set(k, entry);
+                if (m.courts === null) entry.names.add(`row ${line}`);
+                else {
+                    const c = row[m.courts];
+                    if (isBlank(c)) problem(line, "No court named");
+                    else if (readCourts(c) !== 0) entry.names.add(cellText(c).toLowerCase());
+                    // a "closed" row adds no court but still marks the time as covered (0)
+                }
+                continue;
+            }
             let courts: number | null | undefined = opts.defaultCourts;
             if (m.courts !== null) {
                 courts = readCourts(row[m.courts]);
@@ -404,7 +467,6 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                     continue;
                 }
             }
-            const loc = m.location !== null ? cellText(row[m.location]) || null : null;
             add({ date: d.date, time, courts, location: loc, line });
         }
     } else {
@@ -451,6 +513,7 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
             }
         }
     }
+    for (const { row, names } of named.values()) add({ ...row, courts: names.size });
     const rows = [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
     return { rows, problems, duplicates };
 }

@@ -38,5 +38,5 @@ export default async function LeaguePage({ params }: { params: Promise<{ id: str
         );
     }
     if (!rec) notFound();
-    return <Workspace mode="cloud" id={id} initial={rec} />;
+    return <Workspace mode="cloud" id={id} initial={rec} userKey={String(userId)} />;
 }

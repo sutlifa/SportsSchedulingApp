@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import { isCloudConfigured } from "@/lib/authConfig";
+import SignOutButton from "./SignOutButton";
 
 /**
  * Court-blue bar with an optic-yellow baseline under it.
@@ -30,7 +31,7 @@ export default async function SiteHeader() {
                         className="flex min-w-0 items-center gap-3 text-sm"
                     >
                         <span className="hidden truncate opacity-85 sm:inline">{email}</span>
-                        <button className="rounded-md border border-white/40 px-2.5 py-1 font-semibold hover:bg-white/10">Sign out</button>
+                        <SignOutButton />
                     </form>
                 )}
             </div>

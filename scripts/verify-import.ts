@@ -7,7 +7,7 @@
 // the CSV/paste reader, the lenient cell readers, layout guessing, and the
 // engine's "sheet replaces the weekly slots for the dates it covers" rule.
 import { readFileSync } from "node:fs";
-import { prepare } from "../lib/engine/engine.ts";
+import { audit, generate, prepare } from "../lib/engine/engine.ts";
 import { sampleLeague } from "../lib/engine/sample.ts";
 import { safeMapUrl } from "../lib/engine/sanitize.ts";
 import { guessMapping, parseDelimited, parseWith, readCourts, readDate, readTime, type Ctx } from "../lib/import/sheet.ts";
@@ -187,6 +187,46 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     eq(ctxE.instances.filter((i) => i.date === "2027-03-27").length, 0, "blackouts still win over the sheet");
     eq(ctxE.instances.filter((i) => i.date === "2027-03-06" && i.locationId === "loc-park").length, 0, "other locations unaffected (park has no Saturday slots)");
     ok(ctxE.instances.every((i, k) => i.idx === k), "instance indexes are dense");
+}
+
+// --- Tester round 2 regressions ---------------------------------------------------------
+{
+    // Court NAMES: one row per court, counted per time (not "Court 8" = 8 courts).
+    const g = parseDelimited("Date,Start,Court\n3/6/2027,9:00,Court 7\n3/6/2027,9:00,Court 8\n3/6/2027,9:00,Stadium\n3/6/2027,11:00,Court 7\n3/7/2027,9:00,Court 2\n");
+    const m = guessMapping(g, ctx);
+    eq([m.courts, m.courtsMode], [2, "names"], "court-name column detected as names");
+    eq(parseWith(g, m, ctx).rows.map((r) => [r.date, r.time, r.courts]), [["2027-03-06", "09:00", 3], ["2027-03-06", "11:00", 1], ["2027-03-07", "09:00", 1]], "court names counted per time");
+    // Numbered courts, one row per court: repeated date+time means names even with bare numbers.
+    const n = parseDelimited("Date,Time,Court\n3/6/2027,9:00,7\n3/6/2027,9:00,8\n3/6/2027,11:00,7\n3/6/2027,11:00,8\n3/6/2027,13:00,8\n");
+    const nm = guessMapping(n, ctx);
+    eq(nm.courtsMode, "names", "repeated date+time rows => one row per court");
+    eq(parseWith(n, nm, ctx).rows.map((r) => r.courts), [2, 2, 1], "numbered courts counted, not summed");
+    // Counts stay counts.
+    eq(guessMapping(parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,11:00,6\n3/7/2027,9:00,4\n3/7/2027,11:00,2\n"), ctx).courtsMode, "count", "court counts stay counts");
+    // Same time, location in two casings: one row, not two.
+    const cs = parseWith(parseDelimited("Date,Time,Courts,Facility\n3/6/2027,9:00,4,Riverside Main\n3/6/2027,9:00,4,riverside main\n"), guessMapping(parseDelimited("Date,Time,Courts,Facility\n3/6/2027,9:00,4,Riverside Main\n"), ctx), ctx);
+    eq(cs.rows.length, 1, "location casing doesn't double a court time");
+
+    // Re-import with NEW ids: booked matches still find their court time and count against it.
+    const league = sampleLeague();
+    league.slots = [];
+    league.availability = ["09:00", "11:00", "13:00", "15:00"].flatMap((time) =>
+        ["2027-03-06", "2027-03-13", "2027-03-20", "2027-04-03", "2027-04-10", "2027-04-17", "2027-04-24", "2027-05-01", "2027-05-08", "2027-05-15"].map((date) => ({ id: `a${date}${time}`.replace(/[-:]/g, ""), date, time, locationId: "loc-center", courts: 3, bracketIds: [] }))
+    );
+    const first = generate(league, [], { scope: "all", seed: 4, maxAttempts: 10, timeBudgetMs: 1e9, now: () => 0 });
+    const locked = first.matches.map((m) => ({ ...m, locked: m.date !== null }));
+    league.availability = league.availability.map((a) => ({ ...a, id: `new${a.id}` }));
+    const a1 = audit(league, locked);
+    ok([...a1.issues.values()].every((v) => !v.soft.some((x) => x.includes("no longer")) && !v.hard.length), "after a re-import with new ids, booked matches are still attached to their times");
+    league.teams.push({ ...league.teams[0], id: "t10x", name: "Extra 10U", rules: [] }, { ...league.teams[1], id: "t10y", name: "Extra2 10U", rules: [] });
+    const regen = generate(league, locked, { scope: "all", seed: 5, maxAttempts: 10, timeBudgetMs: 1e9, now: () => 0 });
+    const a2 = audit(league, regen.matches);
+    a2.usage.forEach((u, i) => ok(u <= a2.ctx.instances[i].capacity, `no overbooking after re-import (${a2.ctx.instances[i].date} ${a2.ctx.instances[i].time})`));
+
+    // A booked time the facility's sheet now marks closed is a must-level problem.
+    const booked = locked.find((m) => m.date)!;
+    league.availability = league.availability.map((a) => (a.date === booked.date && a.time === booked.time ? { ...a, courts: 0 } : a));
+    ok(audit(league, locked).issues.get(booked.id)?.hard.includes("The facility’s sheet has no court time then"), "closed by the facility = hard flag");
 }
 
 // --- map pin links: real Google Maps only (Tester bug #3) ---------------------------

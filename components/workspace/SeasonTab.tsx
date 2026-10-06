@@ -8,7 +8,7 @@ import { formatDate, isIsoDate, isoToDay } from "@/lib/engine/dates";
 import { withData, type TabProps } from "./types";
 import { ConfirmButton, Field, NumberInput, RangesInput } from "./ui";
 
-export default function SeasonTab({ doc, change, leagueId, store }: TabProps & { leagueId: string; store: LeagueStore }) {
+export default function SeasonTab({ doc, change, leagueId, store, userKey }: TabProps & { leagueId: string; store: LeagueStore; userKey: string }) {
     const router = useRouter();
     const { data } = doc;
     const s = data.settings;
@@ -133,7 +133,7 @@ export default function SeasonTab({ doc, change, leagueId, store }: TabProps & {
                         confirmLabel="Yes, delete it"
                         onConfirm={async () => {
                             await store.remove(leagueId);
-                            removeMirror(leagueId);
+                            removeMirror(userKey, leagueId);
                             router.push("/");
                         }}
                     />

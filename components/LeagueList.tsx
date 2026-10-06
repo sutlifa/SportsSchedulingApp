@@ -9,7 +9,7 @@ import { sampleLeague } from "@/lib/engine/sample";
 
 type Start = "blank" | "example" | "file";
 
-export default function LeagueList({ mode, initial, loadError }: { mode: Mode; initial: LeagueSummary[] | null; loadError: string | null }) {
+export default function LeagueList({ mode, initial, loadError, userKey = "" }: { mode: Mode; initial: LeagueSummary[] | null; loadError: string | null; userKey?: string }) {
     const router = useRouter();
     const store = storeFor(mode);
     const [leagues, setLeagues] = useState<LeagueSummary[] | null>(initial);
@@ -33,14 +33,14 @@ export default function LeagueList({ mode, initial, loadError }: { mode: Mode; i
                 const local = await browserLeagues();
                 if (live) {
                     setLocalCount(local.length);
-                    setMirrors(readMirrors());
+                    setMirrors(readMirrors(userKey));
                 }
             }
         })();
         return () => {
             live = false;
         };
-    }, [mode, store]);
+    }, [mode, store, userKey]);
 
     async function create(e: React.FormEvent) {
         e.preventDefault();

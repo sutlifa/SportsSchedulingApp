@@ -27,5 +27,5 @@ export default async function Home() {
         console.error("HOME LIST LEAGUES ERROR:", err);
         loadError = "Couldn’t reach the database just now. Reload the page in a moment.";
     }
-    return <LeagueList mode="cloud" initial={leagues} loadError={loadError} />;
+    return <LeagueList mode="cloud" initial={leagues} loadError={loadError} userKey={String(userId)} />;
 }

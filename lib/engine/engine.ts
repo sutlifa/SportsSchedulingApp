@@ -88,6 +88,15 @@ export type Ctx = {
     teams: Map<string, TeamCtx>;
     instances: Instance[];
     instByKey: Map<string, Instance>;
+    /**
+     * `${date}|${time}|${locationId}` -> instance. A saved match whose slot id
+     * is gone (a facility sheet re-imported, a weekly slot deleted and
+     * re-added) still finds the same court time by WHEN and WHERE, so it keeps
+     * counting against that time's capacity instead of silently not.
+     */
+    instByTime: Map<string, Instance>;
+    /** `${locationId}|${date}` pairs that a facility sheet defines. */
+    covered: Set<string>;
     startDay: number;
     endDay: number;
     seasonDays: number;
@@ -239,6 +248,11 @@ export function prepare(league: League): Ctx {
         for (const inst of today) instances.push({ ...inst, idx: instances.length });
     }
     const instByKey = new Map(instances.map((i) => [instanceKey(i.date, i.slotId), i]));
+    const instByTime = new Map<string, Instance>();
+    for (const i of instances) {
+        const k = `${i.date}|${i.time}|${i.locationId}`;
+        if (!instByTime.has(k)) instByTime.set(k, i);
+    }
 
     const liveLocations = new Set(league.locations.map((l) => l.id));
     const teams = new Map<string, TeamCtx>();
@@ -312,6 +326,8 @@ export function prepare(league: League): Ctx {
         teams,
         instances,
         instByKey,
+        instByTime,
+        covered,
         startDay,
         endDay,
         seasonDays: Math.max(1, endDay - startDay + 1),
@@ -658,7 +674,9 @@ function matchTeamsExist(ctx: Ctx, m: Match): boolean {
 /** Where a saved match sits, or null if it is unplaced / malformed. */
 export function spotForMatch(ctx: Ctx, m: Match): Spot | null {
     if (!m.date || !m.time || !isIsoDate(m.date) || !isTime(m.time)) return null;
-    const inst = m.slotId ? ctx.instByKey.get(instanceKey(m.date, m.slotId)) : undefined;
+    const inst =
+        (m.slotId ? ctx.instByKey.get(instanceKey(m.date, m.slotId)) : undefined) ??
+        (m.locationId ? ctx.instByTime.get(`${m.date}|${m.time}|${m.locationId}`) : undefined);
     if (inst && inst.time === m.time) return spotOf(inst);
     return {
         idx: -1,
@@ -910,6 +928,9 @@ export function audit(league: League, matches: Match[]): Audit {
         const v = check(ctx, st, m.home, m.away, spot, cap, false);
         if (spot.idx < 0) {
             if (!ctx.league.locations.some((l) => l.id === m.locationId)) v.hard.unshift("Its location was deleted");
+            // The facility's own sheet covers this date and has no court time
+            // at this hour (or says closed): that's a hard fact, not a taste.
+            else if (ctx.covered.has(`${m.locationId}|${m.date}`)) v.hard.unshift("The facility’s sheet has no court time then");
             else v.soft.unshift("This time is no longer in the weekly slots or the facility’s availability");
         }
         place(ctx, st, m.home, m.away, spot, 1);
