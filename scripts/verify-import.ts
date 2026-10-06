@@ -213,6 +213,16 @@ ok(isDateFormat("m/d/yyyy") && isDateFormat("h:mm AM/PM") && isDateFormat("[$-40
     const twice = parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,9:00,4\n3/6/2027,11:00,2\n3/6/2027,11:00,2\n");
     const tm = guessMapping(twice, ctx);
     eq([tm.courtsMode, parseWith(twice, tm, ctx).rows.map((r) => r.courts)], ["count", [4, 2]], "pasted-twice rows stay counts (last wins)");
+    // Tester round 4: notes don't zero a count; court names with "closed" words are still courts.
+    eq([readCourts("3 (1 held for lessons)"), readCourts("6 (camp uses 2)"), readCourts("Courts 1-4, rain backup"), readCourts("Reserved - USTA"), readCourts("Tournament (juniors)"), readCourts("Clinic Court")], [3, 6, 4, 0, 0, undefined], "a number wins over a note; only whole-cell closed words close");
+    const clinic = parseDelimited("Date,Time,Court\n3/6/2027,9:00,Clinic Court\n3/6/2027,9:00,Private Court 1\n3/6/2027,9:00,Event Court\n3/6/2027,9:00,Court 4\n3/6/2027,11:00,Reserved\n");
+    const clm = guessMapping(clinic, ctx);
+    eq([clm.courtsMode, parseWith(clinic, clm, ctx).rows.map((r) => r.courts)], ["names", [4, 0]], "court names containing closed words are kept; a 'Reserved' row closes its time");
+    const mixed = parseDelimited("Date,Time,Courts\n3/6/2027,9:00,Hard 4\n3/6/2027,10:00,Clay 2\n3/6/2027,11:00,All\n3/6/2027,12:00,TBD\n");
+    eq(guessMapping(mixed, ctx).courtsMode, "count", "'Hard 4' / 'All' / 'TBD' don't flip to names");
+    const noted = parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,11:00,4 - event at 1pm\n3/6/2027,13:00,3\n3/6/2027,15:00,2 (lesson at 4pm)\n");
+    const ntm = guessMapping(noted, ctx);
+    eq([ntm.layout, parseWith(noted, ntm, ctx).rows.map((r) => r.courts)], ["rows", [4, 4, 3, 2]], "times inside court notes don't make the sheet look like a grid");
     // Counts stay counts.
     eq(guessMapping(parseDelimited("Date,Time,Courts\n3/6/2027,9:00,4\n3/6/2027,11:00,6\n3/7/2027,9:00,4\n3/7/2027,11:00,2\n"), ctx).courtsMode, "count", "court counts stay counts");
     // Same time, location in two casings: one row, not two.

@@ -243,7 +243,13 @@ export function readTime(c: Cell): string | null {
     return hm(to24(start), start.min);
 }
 
-const CLOSED_WORDS = /\b(reserved|unavailable|not available|tournament|blocked|maintenance|private|lesson|lessons|camp|clinic|event|hold|held|rain|closed)\b/i;
+/**
+ * A cell that SAYS a court is unavailable: the closed word must be the whole
+ * cell, optionally followed by a note after a separator ("Reserved - USTA",
+ * "Tournament (juniors)"). Anchoring matters: "Clinic Court" is a court's
+ * name and "3 (1 held for lessons)" is three courts -- neither is closed.
+ */
+const CLOSED_CELL = /^(reserved|unavailable|not available|tournament|blocked|maintenance|private|lessons?|camp|clinic|event|hold|held|rain ?out|rain|closed)\b\s*(?:[-–—:(/,].*)?$/i;
 
 /** Courts available. null = blank (no slot); 0 = explicitly closed. undefined = unreadable. */
 export function readCourts(c: Cell): number | null | undefined {
@@ -254,7 +260,10 @@ export function readCourts(c: Cell): number | null | undefined {
     const s = c.toLowerCase().trim();
     // Facilities write "reserved", "tournament" etc. where a court is NOT
     // available. These must read as closed, never as an open court.
-    if (/^(-|–|—|x|closed|none|n\/?a|no|full|booked|0)$/.test(s) || CLOSED_WORDS.test(s)) return 0;
+    if (/^(-|–|—|x|closed|none|n\/?a|no|full|booked|0)$/.test(s)) return 0;
+    // No digits at all: either a "closed" word or unreadable. With digits, the
+    // number wins over any note riding along with it.
+    if (!/\d/.test(s)) return CLOSED_CELL.test(s) ? 0 : undefined;
     const items = s.split(/\s*(?:,|;|&|\band\b)\s*/).filter((x) => /\d/.test(x));
     if (items.length >= 2) return items.length;
     const range = /(\d+)\s*(?:-|–|to)\s*(\d+)/.exec(s);
@@ -279,8 +288,14 @@ const nonEmpty = (row: Cell[] | undefined) => (row ?? []).filter((c) => !isBlank
 /** For header detection only: text-ish cells that read as a time (not bare numbers, which are usually court counts). */
 // In a CSV every cell is text, so a bare "4" must not read as 4pm here: a
 // heading that is a time says so with a colon, am/pm or "noon".
+// The whole cell must be a time or time range ("9:00", "1pm", "6-8pm"), so
+// a courts cell with a note ("4 - event at 1pm") can't pose as a heading.
+const CLEAN_TIME = /^\s*(noon|\d{1,2}([:.]\d{2})?\s*([ap]\.?m?\.?)?)(\s*(-|–|—|to)\s*\d{1,2}([:.]\d{2})?\s*([ap]\.?m?\.?)?)?\s*$/i;
 const looksLikeTime = (c: Cell, ctx: Ctx) =>
-    c !== null && ((typeof c === "string" && /:|\d\s*[ap]\.?m?\b|noon/i.test(c)) || typeof c === "object") && !readDate(c, ctx) && readTime(c) !== null;
+    c !== null &&
+    ((typeof c === "string" && CLEAN_TIME.test(c) && /:|\d\s*[ap]|noon/i.test(c)) || typeof c === "object") &&
+    !readDate(c, ctx) &&
+    readTime(c) !== null;
 const looksLikeDate = (c: Cell, ctx: Ctx) => readDate(c, ctx) !== null;
 
 export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
@@ -381,8 +396,9 @@ function guessCourtsMode(grid: Cell[][], header: number, courts: number | null):
         filled++;
         if (typeof c !== "string") continue;
         const t = c.trim();
-        if (SINGLE_COURT.test(t)) named++;
-        else if (readCourts(t) === undefined && /[a-z]/i.test(t) && t.length <= 30) named++; // "Stadium", "Center Court"
+        // Only things that look like a court's NAME: "Court 7", "#4", or words
+        // like "Stadium" / "Center Court". "All", "TBD" or "Hard 4" are not.
+        if (SINGLE_COURT.test(t) || (!/\d/.test(t) && /\bcourts?\b|stadium|grandstand/i.test(t) && !CLOSED_CELL.test(t))) named++;
     }
     return filled > 0 && named / filled >= 0.5 ? "names" : "count";
 }
@@ -448,7 +464,8 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                 else {
                     const c = row[m.courts];
                     if (isBlank(c)) problem(line, "No court named");
-                    else if (readCourts(c) !== 0) entry.names.add(cellText(c).toLowerCase());
+                    // Only a whole-cell "closed" marker is skipped; "Clinic Court" is a court.
+                    else if (!(typeof c === "string" && (CLOSED_CELL.test(c.trim()) || /^(-|–|—|x|closed|none|n\/?a)$/i.test(c.trim())))) entry.names.add(cellText(c).toLowerCase());
                     // a "closed" row adds no court but still marks the time as covered (0)
                 }
                 continue;
