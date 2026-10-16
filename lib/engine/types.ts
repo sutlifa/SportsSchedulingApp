@@ -36,8 +36,11 @@ export type Rule = RuleBase &
         | { type: "no_days"; days: DayOfWeek[] }
         | { type: "only_days"; days: DayOfWeek[] }
         | { type: "not_dates"; ranges: DateRange[] }
-        | { type: "no_start_after"; time: string }
-        | { type: "no_start_before"; time: string }
+        // `days`: only on these days of the week ("no later than 8 PM on
+        // Saturdays"); absent or empty = every day. A team can hold several,
+        // e.g. 8 PM on Saturdays and 7 PM on Sundays.
+        | { type: "no_start_after"; time: string; days?: DayOfWeek[] }
+        | { type: "no_start_before"; time: string; days?: DayOfWeek[] }
         | { type: "only_locations"; locationIds: string[] }
         | { type: "avoid_locations"; locationIds: string[] }
         | { type: "min_days_between"; n: number }

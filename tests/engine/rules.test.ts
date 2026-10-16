@@ -45,7 +45,7 @@ describe("RULE_DEFS", () => {
             assert.equal(typeof def.hint, "string");
             assert.ok(def.fields.length > 0, type);
             const defaults = def.defaults() as Record<string, unknown>;
-            for (const f of def.fields) assert.ok(f.key in defaults, `${type}.${f.key} has a default`);
+            for (const f of def.fields) if (!f.optional) assert.ok(f.key in defaults, `${type}.${f.key} has a default`);
             for (const mode of ["must", "prefer"] as const) {
                 const rule = newRule(type, "rid", mode);
                 assert.deepEqual(sanitizeRule(rule), rule, `${type} defaults survive sanitize`);

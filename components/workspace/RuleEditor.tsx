@@ -95,7 +95,16 @@ export default function RuleEditor({
                                             </label>
                                         );
                                     case "days":
-                                        return <DaysPicker key={f.key} id={fid} value={v as DayOfWeek[]} onChange={(d) => set(i, { [f.key]: d } as Partial<Rule>)} />;
+                                        // Optional for start-time rules ("On (none = every day)"),
+                                        // where an old rule has no `days` at all.
+                                        return f.optional ? (
+                                            <div key={f.key} className="flex flex-wrap items-center gap-2 text-sm">
+                                                <span className="text-muted">{f.label}</span>
+                                                <DaysPicker id={fid} value={(v as DayOfWeek[] | undefined) ?? []} onChange={(d) => set(i, { [f.key]: d } as Partial<Rule>)} />
+                                            </div>
+                                        ) : (
+                                            <DaysPicker key={f.key} id={fid} value={(v as DayOfWeek[] | undefined) ?? []} onChange={(d) => set(i, { [f.key]: d } as Partial<Rule>)} />
+                                        );
                                     case "ranges":
                                         return <RangesInput key={f.key} idPrefix={fid} value={v as never} onChange={(r) => set(i, { [f.key]: r } as Partial<Rule>)} />;
                                     case "time":

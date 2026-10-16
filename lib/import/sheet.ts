@@ -18,7 +18,7 @@
  *
  * Pure. scripts/verify-import.ts covers every shape above.
  */
-import { dayToIso, isoToDay } from "../engine/dates.ts";
+import { dayToIso, formatDate, isoToDay } from "../engine/dates.ts";
 import type { Cell } from "./xlsx.ts";
 
 export type { Cell };
@@ -42,6 +42,15 @@ export type Mapping = {
     courtsMode: "count" | "names";
     /** grid layouts: the column holding the row labels (dates or times). */
     label: number;
+    /**
+     * rows layout: columns that, when anything is written in them, mean the
+     * row's slot is already taken -- a league's own schedule sheet has Home /
+     * Visiting columns, and a note merged across them ("No Courts - Academy
+     * Day") closes those rows. Blank in all of them = free.
+     */
+    booked?: number[];
+    /** rows layout: a weekday column ("Fri", "Sat"), checked against the date. */
+    day?: number | null;
 };
 
 /**
@@ -51,7 +60,14 @@ export type Mapping = {
  */
 export type ParsedRow = { date: string; time: string; courts: number; location: string | null; line: number; units?: string[] };
 export type Problem = { line: number; message: string };
-export type ParseResult = { rows: ParsedRow[]; problems: Problem[]; duplicates: number };
+/**
+ * `taken`: rows left out because a booked column had something in it.
+ * `headings`: one-cell rows ("Week 1", "Turkey Weekend - No Play") skipped as
+ * section headings rather than reported as problems.
+ * `notes`: rows that WERE used but look wrong ("says Sun, but the date is a
+ * Saturday"), for the person to check.
+ */
+export type ParseResult = { rows: ParsedRow[]; problems: Problem[]; duplicates: number; taken?: number; headings?: number; notes?: Problem[] };
 
 export type Ctx = {
     /** Used to pick the year when a cell says "3/6" with no year. */
@@ -294,6 +310,21 @@ const KEYWORDS: Record<"date" | "time" | "courts" | "location", RegExp> = {
     location: /locat|facility|site|venue|club|park|center|centre|^where$/i,
 };
 
+/** Headings of a league's own schedule columns: never a playing-area count. */
+const NOT_COURTS = /match|game|team|home|away|visit|opponent|\bdiv|age|bracket|level|notes?|comments?|score|result|player/i;
+/** Columns where any text means the slot is already taken. */
+const BOOKED = /home|away|visit|opponent|\bteams?\b|match ?up|players?|notes?|comments?|booked|reserved/i;
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+/** "Fri", "Saturday", "sat " -> 0..6 (Sun = 0), else null. */
+function weekdayOf(c: Cell): number | null {
+    if (typeof c !== "string") return null;
+    const t = c.trim().toLowerCase();
+    if (t.length < 3) return null;
+    const i = WEEKDAYS.findIndex((d) => t.startsWith(d) && "sunday monday tuesday wednesday thursday friday saturday tues weds thur thurs".split(" ").some((full) => full.startsWith(t) || t === d || t === `${d}.`));
+    return i < 0 ? null : i;
+}
+const DAY_NAME = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 const nonEmpty = (row: Cell[] | undefined) => (row ?? []).filter((c) => !isBlank(c));
 
 /** For header detection only: text-ish cells that read as a time (not bare numbers, which are usually court counts). */
@@ -311,7 +342,7 @@ const looksLikeDate = (c: Cell, ctx: Ctx) => readDate(c, ctx) !== null;
 
 export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     const scan = Math.min(grid.length, 25);
-    const base: Mapping = { layout: "rows", header: -1, date: null, time: null, courts: null, location: null, courtsMode: "count", label: 0 };
+    const base: Mapping = { layout: "rows", header: -1, date: null, time: null, courts: null, location: null, courtsMode: "count", label: 0, booked: [], day: null };
 
     // Grid layouts: a row whose cells (after the first filled one) are mostly times, or mostly dates.
     for (let r = 0; r < scan; r++) {
@@ -380,10 +411,48 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     const bareNumber = (c: Cell) => (typeof c === "number" && c >= 1) || (typeof c === "string" && /^\s*\d+\s*$/.test(c));
     const time = pick(KEYWORDS.time, (c, col) => !looksLikeDate(c, ctx) && readTime(c) !== null && (!bareNumber(c) || KEYWORDS.time.test(headText(col))), 0.5);
     // A playing-area column holds counts ("4") or names ("Sheet A", "Field 3").
-    const courts = pick(KEYWORDS.courts, (c) => (typeof c === "string" && SINGLE_COURT.test(c.trim())) || (readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx))), 0.6);
+    // A schedule sheet's own columns (Match #, Home Team, Age Div) are never
+    // the playing-area column, however their few filled cells read: a note
+    // like "No Courts - Academy Day" in Home Team once made it the "courts"
+    // column and every blank row read as "nothing free". A real courts column
+    // is also filled on most rows, not on a handful.
+    for (let c = 0; c < width; c++) if (NOT_COURTS.test(headText(c))) taken.add(c);
+    const filledShare = (col: number) => (data.length ? data.filter((r) => !isBlank(r[col])).length / data.length : 0);
+    const courtsCol = pick(KEYWORDS.courts, (c) => (typeof c === "string" && SINGLE_COURT.test(c.trim())) || (readCourts(c) !== undefined && readCourts(c) !== null && !looksLikeDate(c, ctx) && (typeof c === "number" || !looksLikeTime(c, ctx))), 0.6);
+    const courts = courtsCol !== null && filledShare(courtsCol) >= 0.3 ? courtsCol : null;
+    for (let c = 0; c < width; c++) if (NOT_COURTS.test(headText(c)) && c !== date && c !== time) taken.delete(c);
     let location: number | null = null;
-    for (let c = 0; c < width; c++) if (!taken.has(c) && KEYWORDS.location.test(headText(c))) location = c;
-    return { ...base, header, date, time, courts, location, courtsMode: guessCourtsMode(grid, header, courts) };
+    for (let c = 0; c < width; c++) if (!taken.has(c) && c !== courts && KEYWORDS.location.test(headText(c))) location = c;
+    const used = new Set([date, time, courts, location].filter((c): c is number => c !== null));
+    const booked: number[] = [];
+    for (let c = 0; c < width; c++) if (!used.has(c) && BOOKED.test(headText(c))) booked.push(c);
+    let day: number | null = null;
+    for (let c = 0; c < width && day === null; c++) {
+        if (used.has(c)) continue;
+        const cells = data.map((r) => r[c]).filter((x) => !isBlank(x));
+        if (cells.length >= 3 && cells.filter((x) => weekdayOf(x) !== null).length / cells.length >= 0.8) day = c;
+    }
+    // No playing-area column. If dates+times repeat ("Fri 8:00 PM" on three
+    // rows), each row is one court: three rows = three games at once. Merging
+    // them into one slot cut a facility's time to about a third. If every
+    // time appears once, it's a list of open times, and the person says how
+    // many courts each has ("A time slot" + a number).
+    let repeats = false;
+    if (courts === null && date !== null) {
+        const seen = new Set<string>();
+        for (const r of data) {
+            const d = readDate(r[date], ctx);
+            const tm = time !== null ? readTime(r[time]) : (d?.time ?? null);
+            if (!d || !tm) continue;
+            const k = `${d.date}|${tm}|${location !== null ? cellText(r[location]).toLowerCase() : ""}`;
+            if (seen.has(k)) {
+                repeats = true;
+                break;
+            }
+            seen.add(k);
+        }
+    }
+    return { ...base, header, date, time, courts, location, booked, day, courtsMode: courts === null ? (repeats ? "names" : "count") : guessCourtsMode(grid, header, courts) };
 }
 
 /** "Court 7", "Ct. 3", "#4": a reference to ONE court, not a count. */
@@ -436,7 +505,12 @@ function labelColumn(grid: Cell[][], header: number, firstFilled: number): numbe
 export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultCourts: number } = { defaultCourts: 1 }): ParseResult {
     const out = new Map<string, ParsedRow>();
     const problems: Problem[] = [];
+    const notes: Problem[] = [];
     let duplicates = 0;
+    let taken = 0;
+    let headings = 0;
+    /** count mode: times where every row was taken, so they read as closed. */
+    const closed = new Map<string, ParsedRow>();
     // Location casing varies within one sheet ("Riverside Main" / "riverside
     // main"); the same court time must not be counted twice because of it.
     const keyOf = (row: { date: string; time: string; location: string | null }) => `${row.date}|${row.time}|${(row.location ?? "").trim().toLowerCase()}`;
@@ -453,10 +527,17 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
     if (m.layout === "rows") {
         if (m.date === null) return { rows: [], problems: [{ line: 0, message: "Choose which column holds the date." }], duplicates };
         let lastDate: string | null = null;
+        const booked = (m.booked ?? []).filter((c) => c !== m.date && c !== m.time && c !== m.courts && c !== m.location);
         for (let r = m.header + 1; r < grid.length; r++) {
             const row = grid[r];
             if (nonEmpty(row).length === 0) continue;
             const line = r + 1;
+            // "Week 1", "Turkey Weekend - No Play": a section heading (one
+            // cell, often merged across the row, so every cell holds it).
+            if (new Set(nonEmpty(row).map(cellText)).size === 1 && !readDate(row[m.date], ctx)) {
+                headings++;
+                continue;
+            }
             const dc = row[m.date];
             let d = readDate(dc, ctx);
             if (!d && isBlank(dc) && lastDate) d = { date: lastDate, time: null };
@@ -471,6 +552,14 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                 continue;
             }
             const loc = m.location !== null ? cellText(row[m.location]) || null : null;
+            if (m.day !== null && m.day !== undefined) {
+                const said = weekdayOf(row[m.day]);
+                const actual = new Date(`${d.date}T12:00:00Z`).getUTCDay();
+                if (said !== null && said !== actual)
+                    notes.push({ line, message: `Says ${cellText(row[m.day]).trim()}, but ${formatDate(d.date, true)} is a ${DAY_NAME[actual]}. Used the date.` });
+            }
+            const isTaken = booked.some((c) => !isBlank(row[c]));
+            if (isTaken) taken++;
             if (m.courtsMode === "names") {
                 // One row per court: collect distinct court names per time.
                 const k = keyOf({ date: d.date, time, location: loc });
@@ -484,6 +573,9 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                 }
                 const entry = named.get(k) ?? { row: { date: d.date, time, courts: 0, location: loc, line }, names: new Map<string, string>() };
                 named.set(k, entry);
+                // A taken row still marks its time as covered by the file, so
+                // a time whose rows are all taken reads as closed (0).
+                if (isTaken) continue;
                 if (m.courts === null) entry.names.set(`row ${line}`, "");
                 else {
                     // Only a whole-cell "closed" marker is skipped; "Clinic Court" is a court.
@@ -494,6 +586,11 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
                     }
                     // a "closed" row adds no court but still marks the time as covered (0)
                 }
+                continue;
+            }
+            if (isTaken) {
+                const k = keyOf({ date: d.date, time, location: loc });
+                if (!closed.has(k)) closed.set(k, { date: d.date, time, courts: 0, location: loc, line });
                 continue;
             }
             let courts: number | null | undefined = opts.defaultCourts;
@@ -559,6 +656,7 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
         const real = [...names.values()].filter(Boolean);
         add({ ...row, courts: names.size, ...(real.length === names.size && real.length ? { units: real } : {}) });
     }
+    for (const [k, row] of closed) if (!out.has(k)) out.set(k, row);
     const rows = [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-    return { rows, problems, duplicates };
+    return { rows, problems, duplicates, taken, headings, notes };
 }

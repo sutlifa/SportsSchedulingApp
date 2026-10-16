@@ -151,7 +151,7 @@ export default function ImportDialog({
         label: `Column ${colName(c)}${mapping && mapping.header >= 0 && cellText(grid[mapping.header]?.[c] ?? null) ? `: ${cellText(grid[mapping.header][c]).slice(0, 30)}` : ""}`,
     }));
     const setM = (patch: Partial<Mapping>) => mapping && setMapping({ ...mapping, ...patch });
-    const colSelect = (id: string, label: string, key: "date" | "time" | "courts" | "location", optional: string) => (
+    const colSelect = (id: string, label: string, key: "date" | "time" | "courts" | "location" | "day", optional: string) => (
         <Field label={label} htmlFor={id}>
             <select id={id} className="input" value={mapping?.[key] ?? ""} onChange={(e) => setM({ [key]: e.target.value === "" ? null : Number(e.target.value) })}>
                 <option value="">{optional}</option>
@@ -248,6 +248,33 @@ export default function ImportDialog({
                                         {colSelect("imp-time", "Start time column", "time", "In the date column")}
                                         {colSelect("imp-courts", `${cap(t.units)} column`, "courts", "Not in this file")}
                                         {colSelect("imp-loc", "Location column", "location", "Not in this file")}
+                                        {colSelect("imp-day", "Day column (checked against the date)", "day", "Not in this file")}
+                                        <div className="grid gap-1 sm:col-span-2">
+                                            <span className="label" id="imp-booked-label">
+                                                Already taken when filled in
+                                            </span>
+                                            <div className="flex flex-wrap gap-1" role="group" aria-labelledby="imp-booked-label">
+                                                {colOptions
+                                                    .filter((o) => ![mapping.date, mapping.time, mapping.courts, mapping.location, mapping.day].includes(o.c))
+                                                    .map((o) => {
+                                                        const on = (mapping.booked ?? []).includes(o.c);
+                                                        return (
+                                                            <button
+                                                                key={o.c}
+                                                                type="button"
+                                                                aria-pressed={on}
+                                                                onClick={() => setM({ booked: on ? (mapping.booked ?? []).filter((c) => c !== o.c) : [...(mapping.booked ?? []), o.c] })}
+                                                                className={`rounded-md border px-2 py-0.5 text-xs font-semibold ${on ? "border-accent bg-accent text-accent-fg" : "border-border bg-surface text-muted hover:text-fg"}`}
+                                                            >
+                                                                {o.label.replace(/^Column /, "")}
+                                                            </button>
+                                                        );
+                                                    })}
+                                            </div>
+                                            <span className="text-xs text-muted">
+                                                A row with anything written in these columns (a team, “No Courts”, an event) is not free. Blank in all of them = free.
+                                            </span>
+                                        </div>
                                     </>
                                 ) : (
                                     <Field label={mapping.layout === "dates-down" ? "Column with the dates" : "Column with the times"} htmlFor="imp-label">
@@ -268,7 +295,12 @@ export default function ImportDialog({
                                         </select>
                                     </Field>
                                 )}
-                                {mapping.layout === "rows" && mapping.courtsMode === "names" && (
+                                {mapping.layout === "rows" && mapping.courtsMode === "names" && mapping.courts === null && (
+                                    <p className="rounded-md bg-accent-soft p-2 text-sm sm:col-span-2">
+                                        Each row is one {t.unit}: rows with the same date and time are added up, so three 8:00 PM rows mean three {t.matches} at once.
+                                    </p>
+                                )}
+                                {mapping.layout === "rows" && mapping.courtsMode === "names" && mapping.courts !== null && (
                                     <p className="rounded-md bg-warn-soft p-2 text-sm text-warn sm:col-span-2">
                                         Reading each row as one {t.unit}: rows at the same date and time are added up as separate {t.units}, and their names are added
                                         to the facility. If the {t.units} column is a number of {t.units}, change “Each row is” above.
@@ -289,7 +321,7 @@ export default function ImportDialog({
                                             {colOptions.slice(0, 14).map((o) => {
                                                 const role =
                                                     mapping.layout === "rows"
-                                                        ? (["date", "time", "courts", "location"] as const).find((k) => mapping[k] === o.c)
+                                                        ? ((["date", "time", "courts", "location", "day"] as const).find((k) => mapping[k] === o.c) ?? ((mapping.booked ?? []).includes(o.c) ? "taken if filled" : undefined))
                                                         : mapping.label === o.c
                                                           ? "labels"
                                                           : undefined;
@@ -375,6 +407,29 @@ export default function ImportDialog({
                                     <p className="rounded-lg bg-warn-soft p-3 text-sm text-warn">Nothing could be read with these settings. Check the layout and columns above.</p>
                                 )}
                                 {outside > 0 && <p className="text-sm text-warn">{outside} of these fall outside the season dates and won’t be used unless the season changes.</p>}
+                                {(parsed.taken ?? 0) > 0 && (
+                                    <p className="text-sm">
+                                        {parsed.taken === 1 ? "1 row was" : `${parsed.taken} rows were`} left out as already taken (something is written under{" "}
+                                        {(mapping?.booked ?? []).map((c) => cellText(grid[mapping!.header]?.[c] ?? null) || `Column ${colName(c)}`).join(" / ")}).
+                                    </p>
+                                )}
+                                {(parsed.headings ?? 0) > 0 && (
+                                    <p className="text-sm text-muted">
+                                        {parsed.headings === 1 ? "1 heading row" : `${parsed.headings} heading rows`} (like “Week 1”) skipped.
+                                    </p>
+                                )}
+                                {(parsed.notes ?? []).length > 0 && (
+                                    <div className="rounded-md bg-warn-soft p-2 text-sm text-warn">
+                                        <strong>Check {parsed.notes!.length === 1 ? "this row" : "these rows"}:</strong>
+                                        <ul className="mt-1 pl-4">
+                                            {parsed.notes!.slice(0, 20).map((p, i) => (
+                                                <li key={i}>
+                                                    Row {p.line}: {p.message}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
                                 {parsed.problems.length > 0 && (
                                     <details className="text-sm">
                                         <summary className="cursor-pointer text-warn">{parsed.problems.length} rows skipped. See why</summary>

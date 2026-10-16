@@ -18,7 +18,8 @@ export type RuleDef = {
     label: string;
     /** One-line hint shown under the rule picker. */
     hint: string;
-    fields: { key: string; kind: RuleFieldKind; label: string }[];
+    /** `optional`: may be absent on a saved rule (no default needed), e.g. a start limit's days. */
+    fields: { key: string; kind: RuleFieldKind; label: string; optional?: boolean }[];
     defaults: () => Omit<Rule, "id" | "mode" | "type">;
     /** Note-only rules are shown to the scheduler (you), never enforced. */
     noteOnly?: boolean;
@@ -72,14 +73,20 @@ export const RULE_DEFS: Record<RuleType, RuleDef> = {
     },
     no_start_after: {
         label: "Can’t start later than",
-        hint: "Latest start time.",
-        fields: [{ key: "time", kind: "time", label: "Latest start" }],
+        hint: "Latest start time. Pick days to limit it to those days; add one rule per day for different times (8 PM Saturdays, 7 PM Sundays).",
+        fields: [
+            { key: "time", kind: "time", label: "Latest start" },
+            { key: "days", kind: "days", label: "On (none = every day)", optional: true },
+        ],
         defaults: () => ({ time: "18:00" }),
     },
     no_start_before: {
         label: "Can’t start earlier than",
-        hint: "Earliest start time.",
-        fields: [{ key: "time", kind: "time", label: "Earliest start" }],
+        hint: "Earliest start time. Pick days to limit it to those days; add one rule per day for different times.",
+        fields: [
+            { key: "time", kind: "time", label: "Earliest start" },
+            { key: "days", kind: "days", label: "On (none = every day)", optional: true },
+        ],
         defaults: () => ({ time: "10:00" }),
     },
     only_locations: {
@@ -143,6 +150,15 @@ export type NameLookup = {
 };
 
 /** The rule as a sentence. `lookup` turns ids into names; unknown ids are dropped. */
+/** " on Saturdays and Sundays" for a day-limited rule, "" for every day. */
+function onDays(days: DayOfWeek[] | undefined): string {
+    if (!days || !days.length || days.length === 7) return "";
+    const order = (d: number) => (d + 6) % 7; // Monday first
+    // "and", not list()'s "or": the limit holds on each of these days.
+    const names = [...days].sort((a, b) => order(a) - order(b)).map((d) => DAY_PLURAL[d]);
+    return ` on ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`}`;
+}
+
 export function describeRule(rule: Rule, lookup: NameLookup): string {
     const t = lookup.terms ?? termsFor(undefined);
     const plural = (n: number) => countOf(n, t);
@@ -162,9 +178,9 @@ export function describeRule(rule: Rule, lookup: NameLookup): string {
         case "not_dates":
             return rule.ranges.length ? `Unavailable ${rule.ranges.map(formatRange).join("; ")}` : "No dates chosen yet";
         case "no_start_after":
-            return `Start no later than ${formatTime(rule.time)}`;
+            return `Start no later than ${formatTime(rule.time)}${onDays(rule.days)}`;
         case "no_start_before":
-            return `Start no earlier than ${formatTime(rule.time)}`;
+            return `Start no earlier than ${formatTime(rule.time)}${onDays(rule.days)}`;
         case "only_locations": {
             const names = rule.locationIds.map(lookup.location).filter(Boolean) as string[];
             return names.length ? `Only at ${list(names)}` : "No locations chosen yet";

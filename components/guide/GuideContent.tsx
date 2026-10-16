@@ -194,6 +194,12 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             the facility. A column headed “{t.unitHeading}” or “{t.unitHeading} #” is read this way, and the dialog says so.
                         </li>
                         <li>
+                            <strong>A schedule sheet</strong> (your own league template): Date | Time | Home Team | Visiting Team, one row per {t.unit}. Rows with
+                            the same date and time are added up (three 8:00 PM rows = three {t.matches} at once). A row with anything under Home or Visiting (a
+                            team, “No {Units}”, an event) is taken, and “Week 1”-style heading rows are skipped. Pick the “Already taken when filled in” columns
+                            in the dialog; a Day column is checked against the date.
+                        </li>
+                        <li>
                             <strong>Grid</strong>: dates down the side and start times across the top, or the other way round, with a number of {t.units} in each
                             cell.
                         </li>
@@ -245,7 +251,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                                         ["Can’t play on certain days", "“Never on Tuesdays.”"],
                                         ["Can only play on certain days", "“Weekends only.”"],
                                         ["Unavailable dates", "“Spring break, Apr 10–11.”"],
-                                        ["Can’t start later than / earlier than", "“Nothing after 6 PM.” / “Not before 10.”"],
+                                        ["Can’t start later than / earlier than", "“Nothing after 6 PM.” / “Not before 10.” Pick days to limit it to those days, and add one rule per day for different times: “8 PM on Saturdays” + “7 PM on Sundays”."],
                                         ["Only at / Not at certain locations", "“Home facility only.” / “Not at Lakeview.”"],
                                         ["Days between matches", "“At least 3 days apart.”"],
                                         ["Not at the same time as other teams", "Shared coach or siblings. Works both ways automatically."],
@@ -342,7 +348,9 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             ["Row 12: Couldn’t read how many are free: “…”", `The ${t.units} cell has no number and isn’t a closed word or a ${t.unit} name.`, "Fix the cell, or check the column choice."],
                             ["Row 12: Nothing listed as free", `The ${t.units} cell is empty on a row that has a date and time.`, "Fill it in, or ignore the row."],
                             [`Reading each row as one ${t.unit}`, `The ${t.units} column holds names, so ${t.units} at the same time are counted.`, `If it’s really a number of ${t.units}, change “Each row is”.`],
-                            ["N repeated date/time rows: the last one wins", "The same date and time appears more than once.", `Check the preview. For separate ${t.units} per row, choose “One ${t.unit}, by name”.`],
+                            ["N repeated date/time rows: the last one wins", "The same date and time appears more than once.", `Check the preview. For separate ${t.units} per row, choose “One ${t.unit}” under “Each row is”.`],
+                            ["Says Sun, but Sat, Oct 31, 2026 is a Saturday. Used the date.", "The Day column disagrees with the date on that row.", "Fix the row in the spreadsheet, or move that time on the Facilities tab after importing."],
+                            ["N rows were left out as already taken", "Something is written under a column marked “Already taken when filled in” (a team name, “No Courts”, an event).", "If those rows are really free, un-pick that column in the dialog."],
                             ["N of these fall outside the season dates", "Dates before the first or after the last day.", "They’re kept but unused; widen the season to use them."],
                         ]}
                     />

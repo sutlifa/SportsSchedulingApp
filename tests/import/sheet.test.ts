@@ -336,3 +336,77 @@ describe("parseWith", () => {
         assert.equal(r.problems.length, 500);
     });
 });
+
+// A league's own schedule template used as the facility sheet (a real one
+// from an organiser): one row per court, Home/Visiting blank = free, notes
+// merged across Home..Age Div = closed, "Week N" heading rows, and a Day
+// column. It used to import ~10% of the court time: Home Team was guessed as
+// the courts column (a note said "No Courts"), and repeated times were merged.
+describe("schedule-template sheets (one row per court)", () => {
+    const sheet = [
+        "Match #,Facility,Day,Start Date,Time,Home Team,Visiting Team,Age Div",
+        "Week 1,,,,,,,",
+        ",Dewitt Tennis Ctr,Fri,3/12/2027,4:00 PM,,,",
+        ",Dewitt Tennis Ctr,Fri,3/12/2027,4:00 PM,,,",
+        ",Dewitt Tennis Ctr,Fri,3/12/2027,8:00 PM,,,",
+        ",Dewitt Tennis Ctr,Fri,3/12/2027,8:00 PM,,,",
+        ",Dewitt Tennis Ctr,Fri,3/12/2027,8:00 PM,,,",
+        ",Dewitt Tennis Ctr,Sat,3/13/2027,4:00 PM,No Courts - Academy Day,No Courts - Academy Day,No Courts - Academy Day",
+        ",Dewitt Tennis Ctr,Sat,3/13/2027,4:00 PM,No Courts - Academy Day,No Courts - Academy Day,No Courts - Academy Day",
+        ",Dewitt Tennis Ctr,Sat,3/13/2027,6:00 PM,,,",
+        ",Dewitt Tennis Ctr,Sun,3/13/2027,6:00 PM,,,",
+        "Spring Break - No Play,,,,,,,",
+    ].join("\n");
+
+    test("guess: no courts column, rows add up, Home/Visiting mark taken, Day is checked", () => {
+        const m = guess(sheet);
+        assert.equal(m.layout, "rows");
+        assert.equal(m.courts, null, "Home Team is never the courts column");
+        assert.equal(m.courtsMode, "names");
+        assert.deepEqual([m.date, m.time, m.location, m.day], [3, 4, 1, 2]);
+        assert.deepEqual(m.booked, [5, 6], "Home and Visiting");
+    });
+
+    test("parse: repeated rows are separate courts, taken rows close their time, headings are quiet", () => {
+        const r = parse(sheet);
+        assert.deepEqual(rows(r), [
+            ["2027-03-12", "16:00", 2],
+            ["2027-03-12", "20:00", 3],
+            ["2027-03-13", "16:00", 0],
+            ["2027-03-13", "18:00", 2],
+        ]);
+        assert.equal(r.taken, 2);
+        assert.equal(r.headings, 2);
+        assert.deepEqual(r.problems, []);
+        assert.deepEqual(r.notes, [{ line: 11, message: "Says Sun, but Sat, Mar 13, 2027 is a Saturday. Used the date." }]);
+    });
+
+    test("a filled-in schedule: rows with teams are taken, Match # numbers are not court counts", () => {
+        const filled = [
+            "Match #,Date,Time,Home Team,Visiting Team",
+            "1,3/12/2027,4:00 PM,Hawks,Wolves",
+            "2,3/12/2027,4:00 PM,,",
+            "3,3/12/2027,4:00 PM,,",
+        ].join("\n");
+        const m = guess(filled);
+        assert.equal(m.courts, null);
+        assert.deepEqual(rows(parse(filled)), [["2027-03-12", "16:00", 2]]);
+    });
+
+    test("a plain list of open times (each once) still uses the typed number of courts", () => {
+        const m = guess("Date,Start\n3/6/2027,9:00\n3/6/2027,11:00\n");
+        assert.equal(m.courtsMode, "count");
+        assert.deepEqual(rows(parse("Date,Start\n3/6/2027,9:00\n3/6/2027,11:00\n", {}, { defaultCourts: 4 })), [
+            ["2027-03-06", "09:00", 4],
+            ["2027-03-06", "11:00", 4],
+        ]);
+    });
+
+    test("count mode: a time whose only rows are taken reads as closed, not missing", () => {
+        const r = parse("Date,Time,Courts,Notes\n3/6/2027,9:00,4,\n3/6/2027,11:00,4,Tournament\n");
+        assert.deepEqual(rows(r), [
+            ["2027-03-06", "09:00", 4],
+            ["2027-03-06", "11:00", 0],
+        ]);
+    });
+});

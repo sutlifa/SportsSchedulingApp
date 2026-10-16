@@ -160,12 +160,14 @@ export function compileStatic(rule: Rule, liveLocations: Set<string>): ((inst: I
         case "no_start_after": {
             if (!isTime(rule.time)) return null;
             const t = toMinutes(rule.time);
-            return (i) => i.minutes <= t;
+            const on = new Set<number>(rule.days ?? []);
+            return (i) => (on.size > 0 && !on.has(dowOf(i.day))) || i.minutes <= t;
         }
         case "no_start_before": {
             if (!isTime(rule.time)) return null;
             const t = toMinutes(rule.time);
-            return (i) => i.minutes >= t;
+            const on = new Set<number>(rule.days ?? []);
+            return (i) => (on.size > 0 && !on.has(dowOf(i.day))) || i.minutes >= t;
         }
         case "only_locations": {
             // Ids of deleted locations are dropped, so an "only at X" whose X

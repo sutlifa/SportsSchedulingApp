@@ -86,7 +86,12 @@ export function sanitizeRule(v: unknown): Rule | null {
             return { ...base, type, ranges: ranges(r.ranges) };
         case "no_start_after":
         case "no_start_before":
-            return { ...base, type, time: time(r.time) || (type === "no_start_after" ? "18:00" : "10:00") };
+        {
+            // `days` is written only when set, so a rule saved without it
+            // serialises exactly as it did before the field existed.
+            const on = days(r.days);
+            return { ...base, type, time: time(r.time) || (type === "no_start_after" ? "18:00" : "10:00"), ...(on.length ? { days: on } : {}) };
+        }
         case "only_locations":
         case "avoid_locations":
             return { ...base, type, locationIds: ids(r.locationIds) };
