@@ -26,6 +26,59 @@ export default function SeasonTab({
     const { data } = doc;
     const s = data.settings;
     const [importMsg, setImportMsg] = useState<string | null>(null);
+    const [dupName, setDupName] = useState(`${doc.name} (copy)`);
+    const [dupTeams, setDupTeams] = useState(false);
+    const [dupBusy, setDupBusy] = useState(false);
+    const [dupError, setDupError] = useState<string | null>(null);
+
+    /**
+     * A new league with this one's sport, season, brackets (and their rules),
+     * facilities, weekly time and uploaded time -- for running the same setup
+     * again (next season, a second division) with its own teams. Teams come
+     * across only when asked; the schedule never does, since it was built for
+     * these teams. Without teams, rules that name teams lose those names.
+     */
+    const duplicateLeague = async () => {
+        setDupBusy(true);
+        setDupError(null);
+        try {
+            const src = structuredClone(doc.data);
+            const keepTeams = dupTeams;
+            const stripTeams = <R extends { rules: typeof src.brackets[number]["rules"] }>(x: R): R => ({
+                ...x,
+                rules: x.rules.map((r) => ("teamIds" in r ? { ...r, teamIds: keepTeams ? r.teamIds : [] } : r)),
+            });
+            const data = { ...src, brackets: src.brackets.map(stripTeams), teams: keepTeams ? src.teams : [] };
+            const rec = await store.create(dupName.trim() || `${doc.name} (copy)`, data);
+            router.push(`/league/${rec.id}`);
+        } catch (err) {
+            setDupError(err instanceof Error ? err.message : "Couldn’t make the copy. Try again.");
+            setDupBusy(false);
+        }
+    };
+
+    const renderDuplicate = () => (
+        <section className="card grid gap-3 p-5">
+            <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Duplicate league</h2>
+            <p className="text-sm text-muted">
+                Start a new league with this one’s sport, season, brackets and their rules, facilities and {t.time}. Use it for another division or next season, then add
+                its own teams. The schedule isn’t copied.
+            </p>
+            <Field label="New league’s name" htmlFor="dup-name">
+                <input id="dup-name" className="input" value={dupName} maxLength={120} onChange={(e) => setDupName(e.target.value)} />
+            </Field>
+            <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={dupTeams} onChange={(e) => setDupTeams(e.target.checked)} />
+                Copy the teams too ({data.teams.length})
+            </label>
+            {dupError && <p className="rounded-lg bg-danger-soft p-2.5 text-sm text-danger">{dupError}</p>}
+            <div>
+                <button className="btn-secondary" disabled={dupBusy || !dupName.trim()} onClick={duplicateLeague}>
+                    {dupBusy ? "Copying…" : "Duplicate league"}
+                </button>
+            </div>
+        </section>
+    );
     const set = (patch: Partial<typeof s>) => change((d) => withData(d, { settings: { ...d.data.settings, ...patch } }));
 
     const weeks = isIsoDate(s.seasonStart) && isIsoDate(s.seasonEnd) && s.seasonEnd >= s.seasonStart ? Math.ceil((isoToDay(s.seasonEnd) - isoToDay(s.seasonStart) + 1) / 7) : null;
@@ -134,6 +187,7 @@ export default function SeasonTab({
 
             {!setup && (
                 <>
+                    {renderDuplicate()}
                     <section className="card grid gap-3 p-5">
                         <h2 className="font-display text-2xl font-bold uppercase tracking-wide">Backup</h2>
                         <p className="text-sm text-muted">A backup file holds everything in this league: brackets, facilities, teams, rules and the schedule.</p>

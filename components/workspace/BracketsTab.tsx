@@ -32,6 +32,36 @@ export default function BracketsTab({ doc, change, lookup, goTo, t }: TabProps) 
             return withData(d, { brackets: exists ? d.data.brackets.map((x) => (x.id === b.id ? bracket : x)) : [...d.data.brackets, bracket] });
         });
 
+    /**
+     * A copy of a bracket with the same settings and rules, and the same
+     * access to time (every slot or uploaded time "Open to" the original is
+     * open to the copy too) -- but no teams: the point is a second division
+     * (12U Girls next to 12U Boys) that plays by the same rules with its own
+     * teams. It opens straight away so it can be renamed.
+     */
+    const duplicate = (b: Bracket) => {
+        const id = uid("b");
+        const taken = new Set(data.brackets.map((x) => x.name.toLowerCase()));
+        let name = `${b.name} (copy)`;
+        for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${b.name} (copy ${n})`;
+        const copy: Bracket = {
+            ...b,
+            id,
+            name: name.slice(0, 60),
+            color: BRACKET_COLORS[data.brackets.length % BRACKET_COLORS.length],
+            days: [...b.days],
+            rules: b.rules.map((r) => ({ ...structuredClone(r), id: uid("r") })),
+        };
+        const openTo = <T extends { bracketIds: string[] }>(x: T): T => (x.bracketIds.includes(b.id) ? { ...x, bracketIds: [...x.bracketIds, id] } : x);
+        change((d) => {
+            const i = d.data.brackets.findIndex((x) => x.id === b.id);
+            const brackets = [...d.data.brackets];
+            brackets.splice(i + 1, 0, copy);
+            return withData(d, { brackets, slots: d.data.slots.map(openTo), availability: d.data.availability.map(openTo) });
+        });
+        setEditing(copy);
+    };
+
     return (
         <div className="grid gap-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -73,9 +103,14 @@ export default function BracketsTab({ doc, change, lookup, goTo, t }: TabProps) 
                                         {b.days.length ? ` · ${b.days.map((d) => DAY_SHORT[d]).join(", ")} only` : ""}
                                     </p>
                                 </div>
-                                <button className="btn-secondary btn-sm" onClick={() => setEditing(b)}>
-                                    Edit
-                                </button>
+                                <div className="flex shrink-0 gap-2">
+                                    <button className="btn-ghost btn-sm" onClick={() => duplicate(b)} aria-label={`Duplicate ${b.name}`}>
+                                        Duplicate
+                                    </button>
+                                    <button className="btn-secondary btn-sm" onClick={() => setEditing(b)}>
+                                        Edit
+                                    </button>
+                                </div>
                             </div>
                             {b.rules.length > 0 && (
                                 <ul className="mt-2 flex flex-wrap gap-1">
