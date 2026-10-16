@@ -233,11 +233,11 @@ async function walk(sport, t) {
         ok((await page.locator("#imp-courts").inputValue()) === "2", `${t.units} column: Column C`);
         ok((await page.locator("#imp-courts-mode").inputValue()) === "names", `each row is one ${t.unit}, by name`);
         await page.locator("#imp-location").selectOption({ label: fac1 });
-        await see("12 time slots on 5 dates, Sat, Apr 3, 2027 to Sat, Apr 24, 2027.", { exact: false });
+        await see(`22 ${t.match} spots at 12 start times on 5 dates, Sat, Apr 3, 2027 to Sat, Apr 24, 2027.`, { exact: false });
         ok((await dialog().getByRole("cell", { name: "Closed", exact: true }).count()) === 2, "Tournament and Reserved read as closed");
         ok((await dialog().getByRole("cell", { name: `${u(0)}, ${u(1)}, ${u(2)}`, exact: true }).count()) >= 1, "unit names shown per time");
-        await page.getByRole("button", { name: "Import 12 time slots" }).click();
-        await see(`Imported 12 ${t.time} slots on 5 dates from ${file}.xlsx.`);
+        await page.getByRole("button", { name: `Import 22 ${t.match} spots` }).click();
+        await see(`Imported 22 ${t.match} spots at 12 start times on 5 dates from ${file}.xlsx.`);
         await page.getByRole("button", { name: "Show dates" }).click();
         await see(`11:00 AM · ${u(0)}, ${u(1)}`);
         await stepper("Facilities");
@@ -517,7 +517,7 @@ async function walk(sport, t) {
         checks++;
         await page.goto(`${BASE}/tutorial?sport=${sport}`);
         await see(`Spring 2027 Youth ${t.name}`);
-        await see(`Imported 12 ${t.time} slots on 5 dates from ${file}.xlsx.`, { exact: false });
+        await see(`Imported 22 ${t.match} spots at 12 start times on 5 dates from ${file}.xlsx.`, { exact: false });
         for (const ext of ["xlsx", "csv"]) ok((await page.request.get(`${BASE}/tutorial/${file}.${ext}`)).ok(), `${file}.${ext} is served`);
         ok(pageErrors.length === 0, `no page errors: ${pageErrors.join(" | ")}`);
         console.log(`[${sport}] ${checks} checks passed.`);

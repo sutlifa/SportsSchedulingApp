@@ -303,13 +303,13 @@ function Tutorial({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: 
                             Set <B>Location</B> to <strong>{fac1}</strong>.
                         </li>
                         <li>
-                            Read <B>What was read</B>, then press <B>Import 12 time slots</B>.
+                            Read <B>What was read</B>, then press <B>Import 22 {t.match} spots</B>.
                         </li>
                     </ol>
                     <Expect>
-                        “<strong>12</strong> time slots on <strong>5</strong> dates, Sat, Apr 3, 2027 to Sat, Apr 24, 2027.” The table lists each time with its {t.units} (e.g. “
-                        {u(0)}, {u(1)}, {u(2)}”) and the Tournament and Reserved rows show <strong>Closed</strong>. After importing: “Imported 12 {t.time} slots on 5 dates from{" "}
-                        {file}.xlsx.” and a {short1} card under Facility availability.
+                        “<strong>22 {t.match} spots</strong> at 12 start times on 5 dates, Sat, Apr 3, 2027 to Sat, Apr 24, 2027.” The table lists each time with its{" "}
+                        {t.units} (e.g. “{u(0)}, {u(1)}, {u(2)}”) and the Tournament and Reserved rows show <strong>Closed</strong>. After importing: “Imported 22 {t.match}{" "}
+                        spots at 12 start times on 5 dates from {file}.xlsx.” and a {short1} card under Facility availability.
                     </Expect>
                     <Tip>
                         On those 5 dates the spreadsheet <em>replaces</em> {short1}’s weekly {t.time}. On Sunday Apr 11 there’s 11:00 and 1:00 instead of the usual 12:00 and 2:00.

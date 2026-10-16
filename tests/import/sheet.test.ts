@@ -362,7 +362,7 @@ describe("schedule-template sheets (one row per court)", () => {
         const m = guess(sheet);
         assert.equal(m.layout, "rows");
         assert.equal(m.courts, null, "Home Team is never the courts column");
-        assert.equal(m.courtsMode, "names");
+        assert.equal(m.courtsMode, "matches", "Home/Visiting: each row is one match");
         assert.deepEqual([m.date, m.time, m.location, m.day], [3, 4, 1, 2]);
         assert.deepEqual(m.booked, [5, 6], "Home and Visiting");
     });
@@ -403,10 +403,44 @@ describe("schedule-template sheets (one row per court)", () => {
     });
 
     test("count mode: a time whose only rows are taken reads as closed, not missing", () => {
-        const r = parse("Date,Time,Courts,Notes\n3/6/2027,9:00,4,\n3/6/2027,11:00,4,Tournament\n");
+        const r = parse("Date,Time,Courts,Reserved by\n3/6/2027,9:00,4,\n3/6/2027,11:00,4,Tournament\n");
         assert.deepEqual(rows(r), [
             ["2027-03-06", "09:00", 4],
             ["2027-03-06", "11:00", 0],
         ]);
+    });
+});
+
+// Regressions a Tester found in the schedule-template change.
+describe("schedule-template change: older layouts keep working", () => {
+    test("a date written once per day still carries down to time-only rows (not headings)", () => {
+        const r = parse("Date,Time\n11/6/2026,4:00 PM\n,6:00 PM\n,8:00 PM\n11/7/2026,4:00 PM\n,6:00 PM\n");
+        assert.equal(r.rows.length, 5);
+        assert.equal(r.headings, 0);
+    });
+
+    test("a time-only row with no date above is reported, not hidden as a heading", () => {
+        const r = parse("Date,Time\n,9:00\n3/6/2027,10:00\n");
+        assert.deepEqual(r.problems, [{ line: 2, message: "No date" }]);
+        assert.equal(r.headings, 0);
+    });
+
+    test("a facility sheet's Notes column beside a real Courts column is not 'taken'", () => {
+        const sheet = "Date,Time,Courts,Notes\n3/6/2027,9:00,3,Lights on\n3/6/2027,11:00,3,indoor\n3/6/2027,13:00,3,\n";
+        assert.deepEqual(guess(sheet).booked, []);
+        assert.equal(parse(sheet).rows.reduce((n, x) => n + x.courts, 0), 9);
+        assert.deepEqual(guess("Date,Time,Location,Courts,Comments\n3/6/2027,9:00,A,2,x\n3/6/2027,9:00,B,2,y\n").booked, []);
+    });
+
+    test("a column of weekdays is the Day column, never also a taken column", () => {
+        const sheet = "Date,Time,Notes\n3/12/2027,9:00,Fri\n3/12/2027,9:00,Fri\n3/13/2027,9:00,Sat\n";
+        const m = guess(sheet);
+        assert.equal(m.day, 2);
+        assert.ok(!(m.booked ?? []).includes(2));
+        const r = parse(sheet);
+        assert.equal(r.taken, 0);
+        assert.equal(r.rows.reduce((n, x) => n + x.courts, 0), 3);
+        // Even a hand-made mapping marking the Day column as taken ignores it.
+        assert.equal(parse(sheet, { booked: [2] }).taken, 0);
     });
 });

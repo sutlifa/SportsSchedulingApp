@@ -39,7 +39,7 @@ export type Mapping = {
      * a time = distinct names at that date+time. With no courts column,
      * "names" means each row is one court.
      */
-    courtsMode: "count" | "names";
+    courtsMode: "count" | "names" | "matches";
     /** grid layouts: the column holding the row labels (dates or times). */
     label: number;
     /**
@@ -312,8 +312,14 @@ const KEYWORDS: Record<"date" | "time" | "courts" | "location", RegExp> = {
 
 /** Headings of a league's own schedule columns: never a playing-area count. */
 const NOT_COURTS = /match|game|team|home|away|visit|opponent|\bdiv|age|bracket|level|notes?|comments?|score|result|player/i;
-/** Columns where any text means the slot is already taken. */
-const BOOKED = /home|away|visit|opponent|\bteams?\b|match ?up|players?|notes?|comments?|booked|reserved/i;
+/** Columns where any text means the slot is already taken (a team, "No Courts"). */
+const BOOKED = /home|away|visit|opponent|\bteams?\b|match ?up|players?|booked|reserved/i;
+/**
+ * Also taken when filled -- but ONLY on a sheet with no courts column. On a
+ * facility sheet with a real Courts column, Notes holds "Lights on" or
+ * "indoor", and reading those rows as taken closed good court time.
+ */
+const BOOKED_IF_NO_COURTS = /notes?|comments?/i;
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 /** "Fri", "Saturday", "sat " -> 0..6 (Sun = 0), else null. */
 function weekdayOf(c: Cell): number | null {
@@ -424,13 +430,19 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
     let location: number | null = null;
     for (let c = 0; c < width; c++) if (!taken.has(c) && c !== courts && KEYWORDS.location.test(headText(c))) location = c;
     const used = new Set([date, time, courts, location].filter((c): c is number => c !== null));
-    const booked: number[] = [];
-    for (let c = 0; c < width; c++) if (!used.has(c) && BOOKED.test(headText(c))) booked.push(c);
+    // The Day column first, so a column of weekdays is never also a "taken"
+    // column -- that read every row as taken and closed every time.
     let day: number | null = null;
     for (let c = 0; c < width && day === null; c++) {
         if (used.has(c)) continue;
         const cells = data.map((r) => r[c]).filter((x) => !isBlank(x));
         if (cells.length >= 3 && cells.filter((x) => weekdayOf(x) !== null).length / cells.length >= 0.8) day = c;
+    }
+    const booked: number[] = [];
+    for (let c = 0; c < width; c++) {
+        if (used.has(c) || c === day) continue;
+        const h = headText(c);
+        if (BOOKED.test(h) || (courts === null && BOOKED_IF_NO_COURTS.test(h))) booked.push(c);
     }
     // No playing-area column. If dates+times repeat ("Fri 8:00 PM" on three
     // rows), each row is one court: three rows = three games at once. Merging
@@ -452,7 +464,13 @@ export function guessMapping(grid: Cell[][], ctx: Ctx): Mapping {
             seen.add(k);
         }
     }
-    return { ...base, header, date, time, courts, location, booked, day, courtsMode: courts === null ? (repeats ? "names" : "count") : guessCourtsMode(grid, header, courts) };
+    // A league's own schedule sheet (Home/Visiting columns) lists MATCHES,
+    // one per row -- not courts. Reading its rows as courts and dividing by
+    // "courts used by one match" (2 for a tennis team match) halved her
+    // season: 109 rows became ~50 match spots and setup said not enough.
+    const teamCols = booked.some((c) => /home|away|visit|opponent|\bteams?\b|match ?up/i.test(headText(c)));
+    const rowsMode = repeats ? (teamCols ? "matches" : "names") : "count";
+    return { ...base, header, date, time, courts, location, booked, day, courtsMode: courts === null ? rowsMode : guessCourtsMode(grid, header, courts) };
 }
 
 /** "Court 7", "Ct. 3", "#4": a reference to ONE court, not a count. */
@@ -527,14 +545,18 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
     if (m.layout === "rows") {
         if (m.date === null) return { rows: [], problems: [{ line: 0, message: "Choose which column holds the date." }], duplicates };
         let lastDate: string | null = null;
-        const booked = (m.booked ?? []).filter((c) => c !== m.date && c !== m.time && c !== m.courts && c !== m.location);
+        const booked = (m.booked ?? []).filter((c) => c !== m.date && c !== m.time && c !== m.courts && c !== m.location && c !== m.day);
         for (let r = m.header + 1; r < grid.length; r++) {
             const row = grid[r];
             if (nonEmpty(row).length === 0) continue;
             const line = r + 1;
             // "Week 1", "Turkey Weekend - No Play": a section heading (one
-            // cell, often merged across the row, so every cell holds it).
-            if (new Set(nonEmpty(row).map(cellText)).size === 1 && !readDate(row[m.date], ctx)) {
+            // cell, often merged across the row, so every cell holds it). A
+            // row holding only a time (",6:00 PM" under a date written once
+            // per day) is NOT a heading: it takes the date from above.
+            const only = new Set(nonEmpty(row).map(cellText));
+            const single = only.size === 1 ? nonEmpty(row)[0] : null;
+            if (single !== null && !readDate(row[m.date], ctx) && readTime(single) === null && !readDate(single, ctx)) {
                 headings++;
                 continue;
             }
@@ -560,7 +582,9 @@ export function parseWith(grid: Cell[][], m: Mapping, ctx: Ctx, opts: { defaultC
             }
             const isTaken = booked.some((c) => !isBlank(row[c]));
             if (isTaken) taken++;
-            if (m.courtsMode === "names") {
+            // "matches" counts rows exactly like one-court-per-row; the import
+            // dialog then stores each row as a whole match's worth of courts.
+            if (m.courtsMode === "names" || m.courtsMode === "matches") {
                 // One row per court: collect distinct court names per time.
                 const k = keyOf({ date: d.date, time, location: loc });
                 const c = m.courts === null ? null : row[m.courts];

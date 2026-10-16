@@ -88,6 +88,14 @@ export default function ImportDialog({
     const outside = parsed ? parsed.rows.filter((r) => !inSeason(r.date)).length : 0;
     const dates = parsed ? [...new Set(parsed.rows.map((r) => r.date))] : [];
     const cpm = Math.max(1, league.settings.courtsPerMatch || 1);
+    // Lead with match spots, not start times: a sheet listing 8:00 PM on three
+    // rows is ONE start time but three courts, and "56 time slots" read as if
+    // most of a 109-court sheet had been lost. Same count as the planner's.
+    // "One match per row": each row holds a whole match's worth of courts.
+    const perRow = mapping?.courtsMode === "matches" ? cpm : 1;
+    const spotsOf = (rows: { courts: number }[]) => rows.reduce((n, r) => n + Math.floor((r.courts * perRow) / cpm), 0);
+    const spotsText = (n: number) => `${n} ${t.match} ${n === 1 ? "spot" : "spots"}`;
+    const timesText = (n: number) => `${n} start ${n === 1 ? "time" : "times"}`;
 
     const apply = () => {
         if (!parsed || !parsed.rows.length || !fallbackOk) return;
@@ -126,13 +134,13 @@ export default function ImportDialog({
         const existing = new Map(league.availability.map((a) => [`${a.locationId}|${a.date}|${a.time}`, a.id]));
         const rows: Availability[] = parsed.rows.map((r) => {
             const loc = r.location ? ensure(r.location) : fallbackId;
-            return { id: existing.get(`${loc}|${r.date}|${r.time}`) ?? uid("a"), date: r.date, time: r.time, locationId: loc, courts: r.courts, unitIds: unitIdsFor(loc, r.units), bracketIds };
+            return { id: existing.get(`${loc}|${r.date}|${r.time}`) ?? uid("a"), date: r.date, time: r.time, locationId: loc, courts: r.courts * perRow, unitIds: unitIdsFor(loc, r.units), bracketIds };
         });
         const covered = new Set(rows.map((r) => `${r.locationId}|${r.date}`));
         const kept = league.availability.filter((a) => !covered.has(`${a.locationId}|${a.date}`));
         onImport(
             { locations, availability: [...kept, ...rows] },
-            `Imported ${rows.length} ${t.time} slots on ${dates.length} dates from ${source}.`
+            `Imported ${spotsText(spotsOf(parsed.rows))} at ${timesText(rows.length)} on ${dates.length} ${dates.length === 1 ? "date" : "dates"} from ${source}.`
         );
     };
 
@@ -289,15 +297,29 @@ export default function ImportDialog({
                                 )}
                                 {mapping.layout === "rows" && (
                                     <Field label="Each row is" htmlFor="imp-courts-mode">
-                                        <select id="imp-courts-mode" className="input" value={mapping.courtsMode} onChange={(e) => setM({ courtsMode: e.target.value === "names" ? "names" : "count" })}>
+                                        <select
+                                            id="imp-courts-mode"
+                                            className="input"
+                                            value={mapping.courtsMode}
+                                            onChange={(e) => setM({ courtsMode: e.target.value === "names" ? "names" : e.target.value === "matches" ? "matches" : "count" })}
+                                        >
                                             <option value="count">{mapping.courts === null ? "A time slot" : `A time slot with a number of ${t.units}`}</option>
                                             <option value="names">{mapping.courts === null ? `One ${t.unit} (rows at the same time are added up)` : `One ${t.unit}, by name (${t.units} at the same time are counted)`}</option>
+                                            {mapping.courts === null && <option value="matches">{`One ${t.match} (rows at the same time are added up)`}</option>}
                                         </select>
                                     </Field>
                                 )}
+                                {mapping.layout === "rows" && mapping.courtsMode === "matches" && (
+                                    <p className="rounded-md bg-accent-soft p-2 text-sm sm:col-span-2">
+                                        Each row is one {t.match}: rows with the same date and time are added up, so three 8:00 PM rows mean three {t.matches} at once
+                                        {cpm > 1 ? `, each using ${cpm} ${t.units} (Season settings)` : ""}. If each row is one {t.unit} instead, change “Each row is”.
+                                    </p>
+                                )}
                                 {mapping.layout === "rows" && mapping.courtsMode === "names" && mapping.courts === null && (
                                     <p className="rounded-md bg-accent-soft p-2 text-sm sm:col-span-2">
-                                        Each row is one {t.unit}: rows with the same date and time are added up, so three 8:00 PM rows mean three {t.matches} at once.
+                                        Each row is one {t.unit}: rows with the same date and time are added up, so three 8:00 PM rows mean three {t.units}
+                                        {cpm > 1 ? `, which is ${Math.floor(3 / cpm)} ${Math.floor(3 / cpm) === 1 ? t.match : t.matches} at once at ${cpm} ${t.units} per ${t.match} (Season settings)` : ` and three ${t.matches} at once`}
+                                        . If each row is a whole {t.match}, choose “One {t.match}”.
                                     </p>
                                 )}
                                 {mapping.layout === "rows" && mapping.courtsMode === "names" && mapping.courts !== null && (
@@ -399,8 +421,9 @@ export default function ImportDialog({
                                 <h3 className="font-display text-xl font-bold uppercase tracking-wide">What was read</h3>
                                 {parsed.rows.length ? (
                                     <p className="text-sm">
-                                        <strong>{parsed.rows.length}</strong> time slots on <strong>{dates.length}</strong> dates, {formatDate(dates[0], true)} to {formatDate(dates[dates.length - 1], true)}.
-                                        {cpm > 1 && ` At ${cpm} ${t.units} per ${t.match} (Season settings), ${cpm * 3} ${t.units} means 3 ${t.matches} at once.`}
+                                        <strong>{spotsText(spotsOf(parsed.rows))}</strong> at {timesText(parsed.rows.length)} on {dates.length} {dates.length === 1 ? "date" : "dates"}, {formatDate(dates[0], true)} to{" "}
+                                        {formatDate(dates[dates.length - 1], true)}.
+                                        {cpm > 1 && mapping?.courtsMode !== "matches" && ` At ${cpm} ${t.units} per ${t.match} (Season settings), ${cpm * 3} ${t.units} means 3 ${t.matches} at once.`}
                                         {parsed.duplicates > 0 && ` ${parsed.duplicates} repeated date/time rows: the last one wins.`}
                                     </p>
                                 ) : (
@@ -478,7 +501,7 @@ export default function ImportDialog({
                                     Cancel
                                 </button>
                                 <button className="btn-primary" disabled={!parsed?.rows.length || !fallbackOk} onClick={apply}>
-                                    Import {parsed?.rows.length ?? 0} time slots
+                                    Import {spotsText(spotsOf(parsed?.rows ?? []))}
                                 </button>
                             </div>
                         </div>

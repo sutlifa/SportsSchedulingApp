@@ -359,7 +359,8 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                                     byDate.get(a.date)!.push(a);
                                 }
                                 const ds = [...byDate.keys()];
-                                const total = rows.reduce((n, a) => n + (a.unitIds.length || a.courts), 0);
+                                // Match spots, as the import and the planner count them.
+                                const total = rows.reduce((n, a) => n + Math.floor((a.unitIds.length || a.courts) / cpm), 0);
                                 const open = showAvail === l.id;
                                 return (
                                     <div key={l.id} className="card p-4">
@@ -367,8 +368,8 @@ export default function CourtsTab({ doc, change, result, t, only }: TabProps & {
                                             <div className="min-w-0">
                                                 <div className="font-semibold">{l.name}</div>
                                                 <div className="text-sm text-muted tabular">
-                                                    {rows.length} time slots on {ds.length} dates, {formatDate(ds[0])} to {formatDate(ds[ds.length - 1])} · {total} {t.unit}-slots
-                                                    in total
+                                                    {total} {t.match} {total === 1 ? "spot" : "spots"} at {rows.length} start {rows.length === 1 ? "time" : "times"} on {ds.length}{" "}
+                                                    {ds.length === 1 ? "date" : "dates"}, {formatDate(ds[0])} to {formatDate(ds[ds.length - 1])}
                                                 </div>
                                             </div>
                                             <div className="flex flex-wrap gap-2">
