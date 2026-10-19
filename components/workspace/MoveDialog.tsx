@@ -41,6 +41,14 @@ export default function MoveDialog({
     const [picked, setPicked] = useState<SpotOption | null>(null);
     // The unit (sheet / field / court) to put it on at the picked time.
     const [unit, setUnit] = useState<string>("");
+    // "Set the date and time by hand": for a game moved to a time that isn't
+    // one of the slots (a rain-out the facility fitted in on a Tuesday).
+    const start = matches.find((m) => m.id === matchId);
+    const [hDate, setHDate] = useState(start?.date ?? data.settings.seasonStart ?? "");
+    const [hTime, setHTime] = useState(start?.time ?? "");
+    const [hLoc, setHLoc] = useState(start?.locationId ?? data.locations[0]?.id ?? "");
+    const [hUnit, setHUnit] = useState(start?.unitIds?.[0] ?? "");
+    const [hNote, setHNote] = useState("");
     const t = termsFor(data.settings.sport);
     const cpm = Math.max(1, data.settings.courtsPerMatch || 1);
     const locName = (id: string) => data.locations.find((l) => l.id === id)?.name ?? "Unknown facility";
@@ -61,6 +69,78 @@ export default function MoveDialog({
         if (!byDate.has(o.inst.date)) byDate.set(o.inst.date, []);
         byDate.get(o.inst.date)!.push(o);
     }
+
+    const hLocation = data.locations.find((l) => l.id === hLoc);
+    const handOk = /^\d{4}-\d{2}-\d{2}$/.test(hDate) && /^\d{2}:\d{2}$/.test(hTime) && !!hLocation;
+    const renderHand = () => (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm" htmlFor="hand-date">
+                <span className="label">Date</span>
+                <input id="hand-date" type="date" className="input" value={hDate} onChange={(e) => setHDate(e.target.value)} />
+            </label>
+            <label className="grid gap-1 text-sm" htmlFor="hand-time">
+                <span className="label">Start time</span>
+                <input id="hand-time" type="time" step={300} className="input" value={hTime} onChange={(e) => setHTime(e.target.value)} />
+            </label>
+            <label className="grid gap-1 text-sm" htmlFor="hand-loc">
+                <span className="label">Facility</span>
+                <select
+                    id="hand-loc"
+                    className="input"
+                    value={hLoc}
+                    onChange={(e) => {
+                        setHLoc(e.target.value);
+                        setHUnit("");
+                    }}
+                >
+                    {data.locations.map((l) => (
+                        <option key={l.id} value={l.id}>
+                            {l.name}
+                        </option>
+                    ))}
+                </select>
+            </label>
+            {hLocation && hLocation.units.length > 0 && (
+                <label className="grid gap-1 text-sm" htmlFor="hand-unit">
+                    <span className="label">{cap(t.unit)}</span>
+                    <select id="hand-unit" className="input" value={hUnit} onChange={(e) => setHUnit(e.target.value)}>
+                        <option value="">Not set</option>
+                        {hLocation.units.map((u) => (
+                            <option key={u.id} value={u.id}>
+                                {u.name}
+                            </option>
+                        ))}
+                    </select>
+                </label>
+            )}
+            <label className="grid gap-1 text-sm sm:col-span-2" htmlFor="hand-note">
+                <span className="label">Note (optional)</span>
+                <input id="hand-note" className="input" maxLength={200} placeholder="Moved for rain" value={hNote} onChange={(e) => setHNote(e.target.value)} />
+            </label>
+            <div className="sm:col-span-2">
+                <button
+                    className="btn-primary"
+                    disabled={!handOk}
+                    onClick={() =>
+                        onApply({
+                            date: hDate,
+                            time: hTime,
+                            locationId: hLoc,
+                            // No slot: the engine finds one at that date, time and
+                            // facility if there is one, and otherwise flags it softly.
+                            slotId: null,
+                            unitIds: hUnit && hLocation ? unitsFrom(hLocation.units.map((u) => u.id), hUnit) : undefined,
+                            locked: true,
+                            manual: true,
+                            note: hNote.trim() || undefined,
+                        })
+                    }
+                >
+                    Save this date and time
+                </button>
+            </div>
+        </div>
+    );
 
     return (
         <Modal title={match.date ? `Move ${t.match}` : `Place ${t.match}`} onClose={onClose} wide>
@@ -97,7 +177,10 @@ export default function MoveDialog({
                         Swap home/away
                     </button>
                     {match.date && (
-                        <button className="btn-secondary btn-sm" onClick={() => onApply({ date: null, time: null, locationId: null, slotId: null, unitIds: undefined, locked: false, note: "Taken off the schedule by hand." })}>
+                        <button
+                            className="btn-secondary btn-sm"
+                            onClick={() => onApply({ date: null, time: null, locationId: null, slotId: null, unitIds: undefined, locked: false, manual: undefined, note: "Taken off the schedule by hand." })}
+                        >
                             Take off the schedule
                         </button>
                     )}
@@ -146,6 +229,15 @@ export default function MoveDialog({
                 ))}
             </div>
 
+            <details className="mt-4 rounded-lg border border-border p-3">
+                <summary className="cursor-pointer text-sm font-semibold">Set the date and time by hand</summary>
+                <p className="mt-2 text-sm text-muted">
+                    For a {t.match} moved to a time that isn’t one of the slots above, like a rain-out the facility fitted in. It’s locked so regenerating keeps it,
+                    and noted as set by hand. Team rules and double bookings are still checked.
+                </p>
+                {renderHand()}
+            </details>
+
             <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
                 {picked && picked.freeUnits.length >= cpm && (
                     <label className="mr-auto flex items-center gap-2 text-sm">
@@ -174,6 +266,7 @@ export default function MoveDialog({
                             slotId: picked.inst.slotId,
                             unitIds: picked.freeUnits.length >= cpm ? unitsFrom(picked.freeUnits, unit) : undefined,
                             locked: true,
+                            manual: undefined,
                             note: undefined,
                         })
                     }

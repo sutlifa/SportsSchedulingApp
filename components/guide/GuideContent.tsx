@@ -334,6 +334,7 @@ function Guide({ t, sport, choose }: { t: Terms; sport: SportId; choose: (s: Spo
                             ["Breaks: Its location was deleted", "The facility was removed.", `Move the ${t.match} or regenerate.`],
                             ["Breaks: One of these teams has been deleted", "The team no longer exists (usually in a restored backup or an old saved schedule).", `Regenerate to drop the ${t.match}, or add the team back (Teams).`],
                             ["Misses preference: This time is no longer in the weekly slots…", "Its weekly slot was changed or removed.", "Move it to a current time."],
+                            ["Misses preference: Set by hand at a time that isn’t one of the facility’s slots", `The ${t.match}’s date and time were typed in under Move → Set the date and time by hand.`, `Nothing to do if the facility agreed the time; otherwise move it to an open slot.`],
                         ]}
                     />
 

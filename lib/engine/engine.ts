@@ -106,6 +106,8 @@ export type Ctx = {
     startDay: number;
     endDay: number;
     seasonDays: number;
+    /** settings.fill === "pack": earliest times first instead of spreading out. */
+    pack: boolean;
     maxPerDay: number;
     matchMinutes: number;
     clubLimit: number | null;
@@ -364,6 +366,7 @@ export function prepare(league: League): Ctx {
         startDay,
         endDay,
         seasonDays: Math.max(1, endDay - startDay + 1),
+        pack: s.fill === "pack",
         maxPerDay: Math.max(1, Math.floor(s.maxPerDay || 1)),
         matchMinutes: Math.max(1, Math.floor(s.matchMinutes || 90)),
         clubLimit: s.clubLimit && s.clubLimit > 0 ? Math.floor(s.clubLimit) : null,
@@ -508,6 +511,22 @@ function check(ctx: Ctx, st: State, home: string, away: string, spot: Spot, capa
                 if (stop()) return { hard, soft };
             }
             soft.push(...tc.staticSoft[spot.idx]);
+        } else {
+            // Off every slot (typed in by hand, or its slot was removed): no
+            // precomputed verdict exists, so judge this date, time and facility
+            // directly with the same tests. Without this, a game set by hand at
+            // 9 PM sailed past "can't start later than 7 PM".
+            const inst: Instance = { idx: -1, day: spot.day, date: spot.date, time: spot.time, minutes: spot.minutes, slotId: spot.slotId, locationId: spot.locationId, capacity: Infinity, bracketIds: null, unitIds: [] };
+            let sh = bracketHard(tc.bracket, inst);
+            for (const r of tc.staticRules) {
+                if (r.test(inst)) continue;
+                if (r.rule.mode === "prefer") soft.push(r.text);
+                else if (!sh) sh = r.text;
+            }
+            if (sh) {
+                hard.push(sh);
+                if (stop()) return { hard, soft };
+            }
         }
         const games = st.games.get(id) ?? [];
         const sameDay = games.filter((g) => g.day === spot.day);
@@ -593,6 +612,7 @@ function clubOverlap(ctx: Ctx, st: State, day: number, minutes: number, club: st
 }
 
 function score(ctx: Ctx, st: State, home: string, away: string, inst: Instance, softCount: number, rand: number): number {
+    if (ctx.pack) return packScore(ctx, st, home, away, inst, softCount, rand);
     let s = softCount * 60;
     for (const id of [home, away]) {
         const tc = ctx.teams.get(id)!;
@@ -608,6 +628,36 @@ function score(ctx: Ctx, st: State, home: string, away: string, inst: Instance, 
     for (const c of clubsOf(ctx, home, away)) s += clubOverlap(ctx, st, inst.day, inst.minutes, c) * 8;
     s += (st.dayLoad.get(inst.day) ?? 0) * 0.15;
     return s + rand * 4;
+}
+
+/**
+ * "Fill the earliest times first": the cost of a spot is mostly how far into
+ * the season it is, so every pairing takes the earliest time its rules allow
+ * and each week's slots fill before the next week's. An organiser with 18
+ * slots a week found the spreading score using 6 of them in week one and
+ * running the season to its last date; packed, it finishes early instead.
+ *
+ * The weights: a day later costs 10, so a prefer rule (60) is worth about
+ * six days' delay -- kept when it costs a little, given up for a week. Two
+ * days running for one team costs 4, less than a day's delay, so it only
+ * breaks ties within the same days. Clubs and brackets at the same time keep
+ * their small spreading costs. Must rules aren't scored: they never reach here.
+ */
+function packScore(ctx: Ctx, st: State, home: string, away: string, inst: Instance, softCount: number, rand: number): number {
+    let s = softCount * 60 + (inst.day - ctx.startDay) * 10;
+    // Share each week's slots out: a team already playing that week costs a
+    // little (6 per match, still less than a day's delay), so the earliest
+    // slots go to whoever has played least rather than one team three times
+    // in a weekend while another waits. Weekly limits stay the rules' job.
+    const wk = weekKey(inst.day);
+    for (const id of [home, away])
+        for (const g of st.games.get(id) ?? []) {
+            if (Math.abs(g.day - inst.day) === 1) s += 4;
+            if (weekKey(g.day) === wk) s += 6;
+        }
+    s += (st.bracketAt.get(`${inst.day}|${inst.minutes}|${ctx.teams.get(home)!.bracket.id}`) ?? 0) * 1;
+    for (const c of clubsOf(ctx, home, away)) s += clubOverlap(ctx, st, inst.day, inst.minutes, c) * 8;
+    return s + rand * 2;
 }
 
 // ---------------------------------------------------------------------------
@@ -1124,6 +1174,8 @@ export function audit(league: League, matches: Match[]): Audit {
         const v = check(ctx, st, m.home, m.away, spot, cap, false);
         if (spot.idx < 0) {
             if (!ctx.league.locations.some((l) => l.id === m.locationId)) v.hard.unshift("Its location was deleted");
+            // Typed in by hand: the organiser arranged this time themselves.
+            else if (m.manual) v.soft.unshift("Set by hand at a time that isn’t one of the facility’s slots");
             // The facility's own spreadsheet covers this date and has no court time
             // at this hour (or says closed): that's a hard fact, not a taste.
             else if (ctx.covered.has(`${m.locationId}|${m.date}`)) v.hard.unshift(`The facility’s spreadsheet has no ${ctx.terms.time} then`);

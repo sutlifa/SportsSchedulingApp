@@ -116,7 +116,7 @@ const rules = (v: unknown): Rule[] => {
 
 export function defaultSettings(sport: SportId = "tennis"): Settings {
     // Each sport starts with its usual game length (hockey 75, tennis 90...).
-    return { sport, seasonStart: "", seasonEnd: "", blackouts: [], maxPerDay: 1, matchMinutes: SPORTS[sport].minutes, clubLimit: null, clubLimitMode: "prefer", courtsPerMatch: 1 };
+    return { sport, seasonStart: "", seasonEnd: "", blackouts: [], maxPerDay: 1, matchMinutes: SPORTS[sport].minutes, clubLimit: null, clubLimitMode: "prefer", courtsPerMatch: 1, fill: "spread" };
 }
 
 export function emptyLeague(sport: SportId = "tennis"): League {
@@ -142,6 +142,7 @@ export function sanitizeLeague(v: unknown): League {
         clubLimit: s.clubLimit === null || s.clubLimit === undefined || s.clubLimit === "" ? null : int(s.clubLimit, 2, 1, 50),
         clubLimitMode: mode(s.clubLimitMode ?? def.clubLimitMode),
         courtsPerMatch: int(s.courtsPerMatch, def.courtsPerMatch, 1, 20),
+        fill: s.fill === "pack" ? "pack" : "spread",
     };
     const bracketId = unique(new Set(), "b");
     const brackets: Bracket[] = arr(d.brackets, LIMITS.brackets).map((x) => {
@@ -222,6 +223,7 @@ export function sanitizeSchedule(v: unknown): Schedule {
             slotId: placed ? id(m.slotId, "") || null : null,
             ...(placed && Array.isArray(m.unitIds) && m.unitIds.length ? { unitIds: ids(m.unitIds, 20) } : {}),
             locked: m.locked === true,
+            ...(placed && m.manual === true ? { manual: true } : {}),
             ...(typeof m.note === "string" && m.note ? { note: m.note.slice(0, 1000) } : {}),
             ...(Array.isArray(m.blockers) && m.blockers.length
                 ? {

@@ -67,6 +67,8 @@ export function adviceFor(reason: string, league: League): Advice {
     if (/^Its location was deleted$/.test(reason)) return make(`Move the ${t.match} to another time, or regenerate to place it again.`, "courts");
     if (/^The facility’s spreadsheet has no .+ then$/.test(reason))
         return make(`The facility’s uploaded spreadsheet doesn’t include this time. Move the ${t.match}, or upload an updated file.`, "courts");
+    if (/^Set by hand at a time that isn’t one of the facility’s slots$/.test(reason))
+        return make(`This date and time were typed in by hand. Check the facility has a ${t.unit} free then; it isn’t counted against any slot.`, "courts");
     if (/^This time is no longer in the weekly slots/.test(reason))
         return make(`The slot this ${t.match} used was changed or removed. Move it to a current time.`, "courts");
     if (/^There are no time slots in the season/.test(reason))

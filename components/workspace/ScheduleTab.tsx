@@ -183,6 +183,20 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo, t: term
                         ))}
                     </select>
                 </div>
+                <div className="min-w-0">
+                    <label className="label" htmlFor="gen-fill">
+                        Use the time
+                    </label>
+                    <select
+                        id="gen-fill"
+                        className="input w-64"
+                        value={data.settings.fill ?? "spread"}
+                        onChange={(e) => change((d) => ({ ...d, data: { ...d.data, settings: { ...d.data.settings, fill: e.target.value === "pack" ? "pack" : "spread" } } }))}
+                    >
+                        <option value="pack">Fill earliest times first</option>
+                        <option value="spread">Spread across the season</option>
+                    </select>
+                </div>
                 <button className="btn-primary" disabled={running || data.teams.length < 2} onClick={() => (replaceable > 0 ? setConfirming(true) : run())}>
                     {running ? "Scheduling…" : schedule.matches.length ? "Regenerate schedule" : "Generate schedule"}
                 </button>
@@ -417,7 +431,9 @@ export default function ScheduleTab({ doc, change, result, lookup, goTo, t: term
                             {teamName(m.home)} <span className="font-normal text-muted">vs</span> {teamName(m.away)}
                         </span>
                         {m.locked && <span className="chip bg-accent-soft text-accent">Locked</span>}
+                        {m.manual && <span className="chip bg-surface-2 text-muted">Set by hand</span>}
                     </div>
+                    {m.date && m.note && <div className="mt-0.5 text-sm text-muted">{m.note}</div>}
                     <div className="mt-0.5 truncate text-sm text-muted">
                         {href ? (
                             <a href={href} target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-fg">

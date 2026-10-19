@@ -159,6 +159,14 @@ export type Settings = {
      * at once. Weekly slots are entered directly as matches at once.
      */
     courtsPerMatch: number;
+    /**
+     * How Generate uses the time. "spread": each team's matches spaced across
+     * the whole season (the original behaviour). "pack": fill the earliest
+     * times first, so every slot is used week by week and the season can
+     * finish early. Every must and prefer rule applies either way. Missing =
+     * "spread", so leagues saved before this existed schedule as they did.
+     */
+    fill?: "spread" | "pack";
 };
 
 export type League = {
@@ -186,6 +194,12 @@ export type Match = {
     unitIds?: string[];
     /** Locked matches survive a regenerate untouched. Moving a match locks it. */
     locked: boolean;
+    /**
+     * Its date and time were typed in by hand (a rain-out moved to a time the
+     * facility arranged), not picked from a slot. A time that isn't one of the
+     * facility's slots is then flagged softly instead of as a broken rule.
+     */
+    manual?: boolean;
     /** Why an unplaced match could not be placed. */
     note?: string;
     /**

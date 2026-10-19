@@ -164,6 +164,16 @@ export default function SeasonTab({
                     <NumberInput id="courts-per-match" value={s.courtsPerMatch} min={1} max={20} onChange={(v) => set({ courtsPerMatch: v ?? 1 })} />
                 </Field>
                 <Field
+                    label="How to use the time"
+                    htmlFor="fill-mode"
+                    hint={`Fill earliest: every ${t.match} takes the earliest time its rules allow, so each week's slots fill up and the season can finish early. Spread: each team's ${t.matches} are spaced across the whole season. Every rule applies either way.`}
+                >
+                    <select id="fill-mode" className="input max-w-md" value={s.fill ?? "spread"} onChange={(e) => set({ fill: e.target.value === "pack" ? "pack" : "spread" })}>
+                        <option value="pack">Fill the earliest times first (finish early)</option>
+                        <option value="spread">Spread {t.matches} across the season</option>
+                    </select>
+                </Field>
+                <Field
                     label="Same club at the same time"
                     htmlFor="club-limit"
                     hint={`Spreads each club’s teams out so one club isn’t on every ${t.unit} at once. Blank = no limit.`}

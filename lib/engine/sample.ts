@@ -33,6 +33,7 @@ export function sampleLeague(sport: SportId = "tennis"): League {
             clubLimit: 2,
             clubLimitMode: "prefer",
             courtsPerMatch: 1,
+            fill: "spread",
         },
         brackets: [
             { id: "b10", name: "10U", matches: 5, earliest: "09:00", latest: "17:30", days: [], color: "#2f7fb8", rules: [] },
